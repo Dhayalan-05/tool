@@ -1,0 +1,98 @@
+import os
+import sqlite3
+import tkinter as tk
+from tkinter import scrolledtext, filedialog, messagebox
+from pathlib import Path
+import datetime
+
+def chrome_time_to_datetime(chrome_time):
+    epoch_start = datetime.datetime(1601, 1, 1)
+    delta = datetime.timedelta(microseconds=chrome_time)
+    return epoch_start + delta
+
+def fetch_chrome_history():
+    history_db = Path(os.environ["USERPROFILE"]) / "AppData/Local/Google/Chrome/User Data/Default/History"
+    
+    if not history_db.exists():
+        output_box.delete(1.0, tk.END)
+        output_box.insert(tk.END, "❌ Chrome history database not found.")
+        return
+
+    temp_copy = Path("temp_history.db")
+    try:
+        with open(history_db, "rb") as src, open(temp_copy, "wb") as dst:
+            dst.write(src.read())
+
+        conn = sqlite3.connect(temp_copy)
+        cursor = conn.cursor()
+        cursor.execute("SELECT url, title, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 50")
+
+        results = cursor.fetchall()
+        conn.close()
+        temp_copy.unlink()
+
+        if not results:
+            output_box.delete(1.0, tk.END)
+            output_box.insert(tk.END, "⚠️ No history found.")
+            return
+
+        # Tkinter output
+        output_box.delete(1.0, tk.END)
+        output_box.insert(tk.END, "Recent Chrome History:\n\n")
+
+        history_data = []
+        for row in results:
+            url, title, last_time = row
+            visit_time = chrome_time_to_datetime(last_time).strftime("%Y-%m-%d %H:%M:%S")
+            title = title if title else "(No Title)"
+            entry = f"{visit_time} | {title}\n    {url}\n"
+            history_data.append((visit_time, title, url))
+            output_box.insert(tk.END, entry + "\n")
+
+        # Save as HTML report
+        save_as_html(history_data)
+
+    except Exception as e:
+        output_box.delete(1.0, tk.END)
+        output_box.insert(tk.END, f"❌ Error reading history: {e}")
+
+def save_as_html(history_data):
+    css = """
+    <style>
+        body { font-family: Arial, sans-serif; background:#f4f4f9; color:#333; padding:20px; }
+        h2 { color:#2c3e50; }
+        table { width:100%; border-collapse: collapse; margin-top:10px; }
+        th, td { border:1px solid #ccc; padding:8px; text-align:left; font-size:14px; }
+        th { background:#2c3e50; color:white; }
+        tr:nth-child(even) { background:#ecf0f1; }
+        a { color:#2980b9; text-decoration:none; }
+        a:hover { text-decoration:underline; }
+    </style>
+    """
+    html_content = "<html><head><title>Chrome History Report</title>" + css + "</head><body>"
+    html_content += "<h2>Recent Chrome History</h2>"
+    html_content += "<table><tr><th>Visited Time</th><th>Title</th><th>URL</th></tr>"
+
+    for (time, title, url) in history_data:
+        html_content += f"<tr><td>{time}</td><td>{title}</td><td><a href='{url}'>{url}</a></td></tr>"
+
+    html_content += "</table></body></html>"
+
+    save_path = filedialog.asksaveasfilename(defaultextension=".html", filetypes=[("HTML files", "*.html")])
+    if save_path:
+        with open(save_path, "w", encoding="utf-8") as f:
+            f.write(html_content)
+        messagebox.showinfo("✅ Success", f"History saved to {save_path}")
+
+# --- UI Setup ---
+root = tk.Tk()
+root.title("Lightweight Tool - Prototype v3")
+root.geometry("700x500")
+
+scan_button = tk.Button(root, text="Fetch Chrome History", command=fetch_chrome_history)
+scan_button.pack(pady=10)
+
+output_box = scrolledtext.ScrolledText(root, wrap=tk.WORD, width=85, height=22)
+output_box.pack(padx=10, pady=10)
+
+root.mainloop()
