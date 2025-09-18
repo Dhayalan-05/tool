@@ -1,2 +1,100 @@
-a=568
-print(a)
+import os
+import platform
+import shutil
+import tempfile
+import sqlite3
+import struct
+
+def get_chrome_history_path():
+    user_os = platform.system()
+    if user_os == "Windows":
+        return os.path.join(os.environ['LOCALAPPDATA'], r"Google\Chrome\User Data\Default\History")
+    elif user_os == "Darwin":
+        return os.path.expanduser("~/Library/Application Support/Google/Chrome/Default/History")
+    elif user_os == "Linux":
+        return os.path.expanduser("~/.config/google-chrome/Default/History")
+    else:
+        raise Exception("Unsupported OS")
+
+def copy_history_file(src_path):
+    temp_dir = tempfile.gettempdir()
+    temp_path = os.path.join(temp_dir, "History_copy")
+    shutil.copy2(src_path, temp_path)
+    return temp_path
+
+def read_normal_history(db_path):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT url, title, visit_count, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 10")
+        rows = cursor.fetchall()
+        print("=== Existing History Entries ===")
+        for url, title, count, last_visit in rows:
+            print(f"URL: {url}\nTitle: {title}\nVisits: {count}\nLast Visit Time: {last_visit}\n")
+    except Exception as e:
+        print(f"Error reading normal history: {e}")
+    finally:
+        conn.close()
+
+def recover_deleted_records(db_path):
+    """
+    Attempt to recover deleted records by scanning free pages in SQLite file.
+    This is a simplified approach and may not recover all deleted data.
+    """
+    print("=== Attempting to recover deleted records ===")
+    with open(db_path, "rb") as f:
+        data = f.read()
+
+    # SQLite database page size is stored at offset 16-17 (2 bytes)
+    page_size = struct.unpack(">H", data[16:18])[0]
+    if page_size == 1:
+        page_size = 65536  # SQLite uses 65536 if page size is 1
+
+    # Scan pages for deleted records (free pages)
+    # This is a very basic heuristic: free pages start with 0x00 or 0x0D
+    # Real recovery requires parsing SQLite B-tree pages and freelist pages
+
+    recovered_texts = set()
+    for i in range(0, len(data), page_size):
+        page = data[i:i+page_size]
+        # Check if page is a free page (0x0D) or contains deleted records
+        if page[0] == 0x0D or page[0] == 0x00:
+            # Search for ASCII strings that look like URLs or search terms
+            # This is a heuristic: look for "http" or "www"
+            try:
+                text = page.decode('utf-8', errors='ignore')
+                for line in text.split('\x00'):
+                    if line.startswith("http") or line.startswith("www"):
+                        recovered_texts.add(line.strip())
+            except Exception:
+                continue
+
+    if recovered_texts:
+        print(f"Recovered {len(recovered_texts)} possible deleted URLs or search terms:")
+        for text in recovered_texts:
+            print(text)
+    else:
+        print("No deleted records recovered with this method.")
+
+def main():
+    try:
+        history_path = get_chrome_history_path()
+        if not os.path.exists(history_path):
+            print("Chrome history file not found.")
+            return
+
+        # Copy file to avoid lock issues
+        temp_history = copy_history_file(history_path)
+
+        # Read existing history
+        read_normal_history(temp_history)
+
+        # Attempt to recover deleted records
+        recover_deleted_records(temp_history)
+
+        os.remove(temp_history)
+    except Exception as e:
+        print(f"Error: {e}")
+
+if __name__ == "__main__":
+    main()
