@@ -1,1 +1,55 @@
-vec
+import os
+import sys
+import sqlite3
+import shutil
+import tempfile
+import platform
+
+def get_chrome_history_path():
+    user_os = platform.system()
+    if user_os == "Windows":
+        path = os.path.join(os.environ['LOCALAPPDATA'], r"Google\Chrome\User Data\Default\History")
+    elif user_os == "Darwin":  # macOS
+        path = os.path.expanduser("~/Library/Application Support/Google/Chrome/Default/History")
+    elif user_os == "Linux":
+        path = os.path.expanduser("~/.config/google-chrome/Default/History")
+    else:
+        raise Exception("Unsupported OS")
+    return path
+
+def copy_history_file(src_path):
+    # Chrome locks the History file while running, so copy it to a temp location
+    temp_dir = tempfile.gettempdir()
+    temp_path = os.path.join(temp_dir, "History_copy")
+    shutil.copy2(src_path, temp_path)
+    return temp_path
+
+def extract_search_terms(history_db_path):
+    conn = sqlite3.connect(history_db_path)
+    cursor = conn.cursor()
+    # The 'urls' table contains URLs visited
+    # The 'keyword_search_terms' table contains search terms
+    try:
+        cursor.execute("SELECT term, url FROM keyword_search_terms JOIN urls ON keyword_search_terms.url_id = urls.id")
+        results = cursor.fetchall()
+        for term, url in results:
+            print(f"Search term: {term} | URL: {url}")
+    except sqlite3.Error as e:
+        print(f"Error reading database: {e}")
+    finally:
+        conn.close()
+
+def main():
+    try:
+        history_path = get_chrome_history_path()
+        if not os.path.exists(history_path):
+            print("Chrome history file not found.")
+            return
+        temp_history = copy_history_file(history_path)
+        extract_search_terms(temp_history)
+        os.remove(temp_history)
+    except Exception as e:
+        print(f"Error: {e}")
+
+if __name__ == "__main__":
+    main()
