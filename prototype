@@ -11,7 +11,7 @@ def chrome_time_to_datetime(chrome_time):
     return epoch_start + delta
 
 def fetch_chrome_history():
-    history_db = Path(os.environ["USERPROFILE"]) / "AppData/Local/Google/Chrome/User Data/Default/History"
+    history_db = Path(os.environ["USERPROFILE"]) / "AppData/Local/Google/Chrome/User Data/profile 1/History"
     
     if not history_db.exists():
         output_box.delete(1.0, tk.END)
@@ -25,7 +25,7 @@ def fetch_chrome_history():
 
         conn = sqlite3.connect(temp_copy)
         cursor = conn.cursor()
-        cursor.execute("SELECT url, title, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 50")
+        cursor.execute("SELECT url, title, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 5")
 
         results = cursor.fetchall()
         conn.close()
