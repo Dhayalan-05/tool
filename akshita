@@ -1,100 +1,248 @@
-import os
-import platform
-import shutil
-import tempfile
-import sqlite3
-import struct
+#!/usr/bin/env python3
+"""
+full_browsing_extractor_notepad.py
+- Extracts browser history (Chrome/Edge/Brave/Firefox/Safari)
+- Attempts deleted-row recovery if 'undark' is installed
+- Optional memory dump extraction (Volatility strings)
+- No CSV files created
+- Output shown directly in Notepad/TextEdit/Gedit
+"""
 
-def get_chrome_history_path():
-    user_os = platform.system()
-    if user_os == "Windows":
-        return os.path.join(os.environ['LOCALAPPDATA'], r"Google\Chrome\User Data\Default\History")
-    elif user_os == "Darwin":
-        return os.path.expanduser("~/Library/Application Support/Google/Chrome/Default/History")
-    elif user_os == "Linux":
-        return os.path.expanduser("~/.config/google-chrome/Default/History")
-    else:
-        raise Exception("Unsupported OS")
+import os, sys, platform, shutil, tempfile, sqlite3, datetime, subprocess, re
+from pathlib import Path
+import argparse
 
+# ---------------------------
+# Time conversion helpers
+# ---------------------------
+def chrome_time_to_datetime(chrome_time):
+    try: return datetime.datetime(1601,1,1) + datetime.timedelta(microseconds=int(chrome_time))
+    except: return ""
+
+def firefox_time_to_datetime(moz_us):
+    try: return datetime.datetime(1970,1,1) + datetime.timedelta(microseconds=int(moz_us))
+    except: return ""
+
+def safari_time_to_datetime(safari_sec):
+    try: return datetime.datetime(2001,1,1) + datetime.timedelta(seconds=float(safari_sec))
+    except: return ""
+
+# ---------------------------
+# Copy locked DB
+# ---------------------------
 def copy_history_file(src_path):
-    temp_dir = tempfile.gettempdir()
-    temp_path = os.path.join(temp_dir, "History_copy")
-    shutil.copy2(src_path, temp_path)
-    return temp_path
+    if not os.path.exists(src_path): return None
+    tmp = os.path.join(tempfile.gettempdir(), f"copy_{os.path.basename(src_path)}_{os.getpid()}")
+    shutil.copy2(src_path, tmp)
+    return tmp
 
-def read_normal_history(db_path):
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+# ---------------------------
+# Deleted-row recovery (Chromium)
+# ---------------------------
+def attempt_deleted_recovery(db_path):
+    recovered = []
     try:
-        cursor.execute("SELECT url, title, visit_count, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 10")
-        rows = cursor.fetchall()
-        print("=== Existing History Entries ===")
-        for url, title, count, last_visit in rows:
-            print(f"URL: {url}\nTitle: {title}\nVisits: {count}\nLast Visit Time: {last_visit}\n")
-    except Exception as e:
-        print(f"Error reading normal history: {e}")
-    finally:
-        conn.close()
-
-def recover_deleted_records(db_path):
-    """
-    Attempt to recover deleted records by scanning free pages in SQLite file.
-    This is a simplified approach and may not recover all deleted data.
-    """
-    print("=== Attempting to recover deleted records ===")
-    with open(db_path, "rb") as f:
-        data = f.read()
-
-    # SQLite database page size is stored at offset 16-17 (2 bytes)
-    page_size = struct.unpack(">H", data[16:18])[0]
-    if page_size == 1:
-        page_size = 65536  # SQLite uses 65536 if page size is 1
-
-    # Scan pages for deleted records (free pages)
-    # This is a very basic heuristic: free pages start with 0x00 or 0x0D
-    # Real recovery requires parsing SQLite B-tree pages and freelist pages
-
-    recovered_texts = set()
-    for i in range(0, len(data), page_size):
-        page = data[i:i+page_size]
-        # Check if page is a free page (0x0D) or contains deleted records
-        if page[0] == 0x0D or page[0] == 0x00:
-            # Search for ASCII strings that look like URLs or search terms
-            # This is a heuristic: look for "http" or "www"
+        from undark import Undark
+        und = Undark(db_path)
+        recs = und.recover_table("urls")
+        for r in recs:
             try:
-                text = page.decode('utf-8', errors='ignore')
-                for line in text.split('\x00'):
-                    if line.startswith("http") or line.startswith("www"):
-                        recovered_texts.add(line.strip())
-            except Exception:
-                continue
+                url = r[1] if len(r) > 1 else ""
+                title = r[2] if len(r) > 2 else ""
+                visit_count = r[3] if len(r) > 3 else 0
+                last_visit = r[5] if len(r) > 5 else ""
+                vt = chrome_time_to_datetime(last_visit) if last_visit else ""
+                recovered.append(["Recovered (deleted)", url, title, visit_count, vt])
+            except: continue
+    except: pass
+    return recovered
 
-    if recovered_texts:
-        print(f"Recovered {len(recovered_texts)} possible deleted URLs or search terms:")
-        for text in recovered_texts:
-            print(text)
-    else:
-        print("No deleted records recovered with this method.")
-
-def main():
+# ---------------------------
+# Chromium-based history
+# ---------------------------
+def extract_chromium_history(db_path, browser_name):
+    data = []
     try:
-        history_path = get_chrome_history_path()
-        if not os.path.exists(history_path):
-            print("Chrome history file not found.")
-            return
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT url, title, visit_count, last_visit_time FROM urls ORDER BY last_visit_time DESC")
+        for url, title, visit_count, last_visit_time in cur.fetchall():
+            vt = chrome_time_to_datetime(last_visit_time) if last_visit_time else ""
+            data.append([browser_name, url or "", title or "", visit_count or 0, vt])
+        conn.close()
+    except: pass
+    data.extend(attempt_deleted_recovery(db_path))
+    return data
 
-        # Copy file to avoid lock issues
-        temp_history = copy_history_file(history_path)
+# ---------------------------
+# Firefox history
+# ---------------------------
+def extract_firefox_history(profile_dir):
+    data = []
+    for root, dirs, files in os.walk(profile_dir):
+        if "places.sqlite" in files:
+            tmp = copy_history_file(os.path.join(root,"places.sqlite"))
+            try:
+                conn = sqlite3.connect(tmp)
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT moz_places.url, moz_places.title, moz_places.visit_count, moz_historyvisits.visit_date
+                    FROM moz_places
+                    JOIN moz_historyvisits ON moz_places.id = moz_historyvisits.place_id
+                    ORDER BY visit_date DESC
+                """)
+                for url, title, visit_count, visit_date in cur.fetchall():
+                    vt = firefox_time_to_datetime(visit_date) if visit_date else ""
+                    data.append(["Firefox", url or "", title or "", visit_count or 0, vt])
+                conn.close()
+            except: pass
+            try: os.remove(tmp)
+            except: pass
+    return data
 
-        # Read existing history
-        read_normal_history(temp_history)
+# ---------------------------
+# Safari history
+# ---------------------------
+def extract_safari_history(db_path):
+    data = []
+    tmp = copy_history_file(db_path)
+    if not tmp: return data
+    try:
+        conn = sqlite3.connect(tmp)
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT history_items.url, history_items.title, history_visits.visit_time
+            FROM history_items JOIN history_visits
+            ON history_items.id = history_visits.history_item
+            ORDER BY history_visits.visit_time DESC
+        """)
+        for url, title, visit_time in cur.fetchall():
+            vt = safari_time_to_datetime(visit_time)
+            data.append(["Safari", url or "", title or "", "", vt])
+        conn.close()
+    except: pass
+    try: os.remove(tmp)
+    except: pass
+    return data
 
-        # Attempt to recover deleted records
-        recover_deleted_records(temp_history)
+# ---------------------------
+# Browser paths by OS
+# ---------------------------
+def get_browser_paths():
+    home = str(Path.home())
+    user_os = platform.system()
+    p = {}
+    if user_os == "Windows":
+        local = os.environ.get("LOCALAPPDATA","")
+        roaming = os.environ.get("APPDATA","")
+        p = {
+            "Chrome": os.path.join(local,r"Google\Chrome\User Data\Default\History"),
+            "Edge": os.path.join(local,r"Microsoft\Edge\User Data\Default\History"),
+            "Brave": os.path.join(local,r"BraveSoftware\Brave-Browser\User Data\Default\History"),
+            "Firefox": os.path.join(roaming,r"Mozilla\Firefox\Profiles")
+        }
+    elif user_os == "Darwin":
+        p = {
+            "Chrome": os.path.join(home,"Library/Application Support/Google/Chrome/Default/History"),
+            "Edge": os.path.join(home,"Library/Application Support/Microsoft Edge/Default/History"),
+            "Brave": os.path.join(home,"Library/Application Support/BraveSoftware/Brave-Browser/Default/History"),
+            "Safari": os.path.join(home,"Library/Safari/History.db"),
+            "Firefox": os.path.join(home,"Library/Application Support/Firefox/Profiles")
+        }
+    else:
+        p = {
+            "Chrome": os.path.join(home,".config/google-chrome/Default/History"),
+            "Edge": os.path.join(home,".config/microsoft-edge/Default/History"),
+            "Brave": os.path.join(home,".config/BraveSoftware/Brave-Browser/Default/History"),
+            "Firefox": os.path.join(home,".mozilla/firefox")
+        }
+    return p
 
-        os.remove(temp_history)
+# ---------------------------
+# Volatility memory strings (optional)
+# ---------------------------
+URL_REGEX = re.compile(r"https?://[^\s'\"<>]+", re.IGNORECASE)
+def run_volatility_strings(memory_file):
+    tmp_out = os.path.join(tempfile.gettempdir(), "vol_strings.txt")
+    commands_to_try = [
+        ["vol.py","-f",memory_file,"windows.strings","--output","text","--output-file",tmp_out],
+        ["vol","-f",memory_file,"windows.strings","--output","text","--output-file",tmp_out],
+        ["python","vol.py","-f",memory_file,"windows.strings","--output","text","--output-file",tmp_out],
+        ["python3","vol.py","-f",memory_file,"windows.strings","--output","text","--output-file",tmp_out]
+    ]
+    for cmd in commands_to_try:
+        try:
+            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            return tmp_out
+        except: continue
+    return None
+
+def parse_strings_for_urls(strings_file):
+    urls = []
+    try:
+        with open(strings_file,"r",errors="ignore") as f:
+            for line in f:
+                for m in URL_REGEX.finditer(line):
+                    urls.append(["Memory (strings)", m.group(0), "", "", ""])
+    except: pass
+    return urls
+
+# ---------------------------
+# Open in Notepad/TextEdit/Gedit
+# ---------------------------
+def open_in_notepad(text_lines):
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, mode="w", encoding="utf-8", suffix=".txt")
+    for line in text_lines:
+        tmp_file.write(line + "\n")
+    tmp_file.close()
+    user_os = platform.system()
+    try:
+        if user_os == "Windows": subprocess.Popen(["notepad.exe", tmp_file.name])
+        elif user_os == "Darwin": subprocess.Popen(["open","-a","TextEdit", tmp_file.name])
+        else: subprocess.Popen(["gedit", tmp_file.name])
     except Exception as e:
-        print(f"Error: {e}")
+        print("Could not open text editor:", e)
 
-if __name__ == "__main__":
+# ---------------------------
+# Main
+# ---------------------------
+def main():
+    parser = argparse.ArgumentParser(description="Full browsing extractor + memory parsing")
+    parser.add_argument("--memory", help="Path to memory dump (optional)")
+    args = parser.parse_args()
+
+    paths = get_browser_paths()
+    all_data = []
+
+    for browser, path in paths.items():
+        if not os.path.exists(path): continue
+        data = []
+        if "Firefox" in browser:
+            data = extract_firefox_history(path)
+        elif "Safari" in browser:
+            data = extract_safari_history(path)
+        else:
+            data = extract_chromium_history(path, browser)
+        all_data.extend(data)
+
+    # Memory dump URLs
+    if args.memory and os.path.exists(args.memory):
+        strings_file = run_volatility_strings(args.memory)
+        if strings_file: all_data.extend(parse_strings_for_urls(strings_file))
+
+    # Prepare output lines
+    output_lines = []
+    header = f"{'Source':20} | {'URL':50} | {'Title':30} | {'Count':5} | {'Last Visit'}"
+    output_lines.append(header)
+    output_lines.append("-"*130)
+    for row in all_data:
+        s,u,t,c,vt = row
+        vt_str = str(vt)
+        line = f"{s:20} | {u[:50]:50} | {t[:30]:30} | {str(c):5} | {vt_str}"
+        output_lines.append(line)
+
+    # Open directly in Notepad/TextEdit/Gedit
+    open_in_notepad(output_lines)
+
+if __name__=="__main__":
     main()
