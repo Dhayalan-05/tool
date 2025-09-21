@@ -1,2 +1,157 @@
-a=568
-print(a)
+import os
+import tempfile
+import shutil
+import sqlite3
+import struct
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report
+import scipy
+
+# ========== PERSON A ==========
+def extract_search_terms(history_db_path):
+    search_terms = []
+    conn = sqlite3.connect(history_db_path)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT term, url FROM keyword_search_terms JOIN urls ON keyword_search_terms.url_id = urls.id")
+        results = cursor.fetchall()
+        for term, url in results:
+            search_terms.append((term, url))
+    except sqlite3.Error:
+        pass
+    finally:
+        conn.close()
+    return search_terms
+
+
+# ========== PERSON B ==========
+def read_normal_history(db_path):
+    urls = []
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT url, title, visit_count, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 20")
+        rows = cursor.fetchall()
+        for url, title, count, last_visit in rows:
+            urls.append((url, title, count, last_visit))
+    except Exception:
+        pass
+    finally:
+        conn.close()
+    return urls
+
+
+def recover_deleted_records(db_path):
+    recovered = set()
+    with open(db_path, "rb") as f:
+        data = f.read()
+
+    page_size = struct.unpack(">H", data[16:18])[0]
+    if page_size == 1:
+        page_size = 65536  
+
+    for i in range(0, len(data), page_size):
+        page = data[i:i+page_size]
+        if page[0] == 0x0D or page[0] == 0x00:
+            try:
+                text = page.decode('utf-8', errors='ignore')
+                for line in text.split('\x00'):
+                    if line.startswith("http") or line.startswith("www"):
+                        recovered.add(line.strip())
+            except Exception:
+                continue
+    return list(recovered)
+
+
+# ========== PERSON C ==========
+def run_ml_analysis(csv_path):
+    df = pd.read_csv(csv_path)
+    df.columns = df.columns.str.strip().str.lower()
+
+    # Preprocess
+    df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+    df['hour'] = df['timestamp'].dt.hour
+    df['duration'] = pd.to_numeric(df['duration'], errors='coerce').fillna(0)
+
+    X = df[["url", "hour", "duration"]]
+    y = df["category"]
+
+    # Vectorize URL
+    tfidf = TfidfVectorizer()
+    X_url = tfidf.fit_transform(X["url"])
+    X_numeric = X[["hour", "duration"]].values
+    X_final = scipy.sparse.hstack([X_url, X_numeric])
+
+    # Train/test split
+    X_train, X_test, y_train, y_test = train_test_split(X_final, y, test_size=0.2, random_state=42)
+
+    clf = RandomForestClassifier(n_estimators=100, random_state=42)
+    clf.fit(X_train, y_train)
+    y_pred = clf.predict(X_test)
+
+    report = classification_report(y_test, y_pred)
+    return report
+
+
+# ========== PERSON D (YOU) ==========
+def main():
+    print("\n🚀 Starting Combined Browser History Project...\n")
+
+    # Path to Chrome history (Linux default, adjust for Windows/Mac if needed)
+    src_path = os.path.expanduser("~/.config/google-chrome/Default/History")
+    if not os.path.exists(src_path):
+        print("❌ Chrome history not found. Exiting.")
+        return
+
+    # Copy to temp (avoid DB lock)
+    temp_path = os.path.join(tempfile.gettempdir(), "History_copy")
+    shutil.copy2(src_path, temp_path)
+
+    # 1. Extract search terms
+    search_terms = extract_search_terms(temp_path)
+
+    # 2. Extract browsing history
+    normal_history = read_normal_history(temp_path)
+    deleted_history = recover_deleted_records(temp_path)
+
+    # 3. Run ML analysis (from prepared browsing_history.csv)
+    ml_report = None
+    if os.path.exists("browsing_history.csv"):
+        ml_report = run_ml_analysis("browsing_history.csv")
+
+    # Clean up
+    os.remove(temp_path)
+
+    # 4. Generate Final Report
+    with open("final_report.txt", "w", encoding="utf-8") as f:
+        f.write("===== FINAL REPORT =====\n\n")
+
+        f.write("🔹 Search Terms:\n")
+        for term, url in search_terms[:10]:
+            f.write(f" - {term} → {url}\n")
+        f.write("\n")
+
+        f.write("🔹 Browsing History (recent):\n")
+        for url, title, count, last_visit in normal_history:
+            f.write(f" - {url} | Title: {title} | Visits: {count}\n")
+        f.write("\n")
+
+        f.write("🔹 Recovered Deleted URLs:\n")
+        for url in deleted_history[:10]:
+            f.write(f" - {url}\n")
+        f.write("\n")
+
+        if ml_report:
+            f.write("🔹 ML Classification Report:\n")
+            f.write(ml_report + "\n")
+
+        f.write("===== END OF REPORT =====\n")
+
+    print("✅ Final report saved as final_report.txt")
+
+
+if _name_ == "_main_":
+    main()
