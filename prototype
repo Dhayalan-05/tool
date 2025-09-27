@@ -25,7 +25,7 @@ def fetch_chrome_history():
 
         conn = sqlite3.connect(temp_copy)
         cursor = conn.cursor()
-        cursor.execute("SELECT url, title, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 5")
+        cursor.execute("SELECT url, title, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 100")
 
         results = cursor.fetchall()
         conn.close()
@@ -33,7 +33,7 @@ def fetch_chrome_history():
 
         if not results:
             output_box.delete(1.0, tk.END)
-            output_box.insert(tk.END, "⚠️ No history found.")
+            output_box.insert(tk.END, "⚠ No history found.")
             return
 
         # Tkinter output

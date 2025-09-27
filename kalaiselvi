@@ -9,6 +9,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report
 import scipy
+import tkinter as tk
+from tkinter import scrolledtext
 
 # ========== PERSON A ==========
 def extract_search_terms(history_db_path):
@@ -26,7 +28,6 @@ def extract_search_terms(history_db_path):
         conn.close()
     return search_terms
 
-
 # ========== PERSON B ==========
 def read_normal_history(db_path):
     urls = []
@@ -42,7 +43,6 @@ def read_normal_history(db_path):
     finally:
         conn.close()
     return urls
-
 
 def recover_deleted_records(db_path):
     recovered = set()
@@ -64,7 +64,6 @@ def recover_deleted_records(db_path):
             except Exception:
                 continue
     return list(recovered)
-
 
 # ========== PERSON C ==========
 def run_ml_analysis(csv_path):
@@ -95,15 +94,25 @@ def run_ml_analysis(csv_path):
     report = classification_report(y_test, y_pred)
     return report
 
-
 # ========== PERSON D (YOU) ==========
-def main():
-    print("\n🚀 Starting Combined Browser History Project...\n")
+def main_gui():
+    # --- Setup GUI ---
+    root = tk.Tk()
+    root.title("Browser History Project Output")
+    root.geometry("900x600")
+
+    output_box = scrolledtext.ScrolledText(root, wrap=tk.WORD, width=110, height=32)
+    output_box.pack(padx=10, pady=10)
+
+    output_box.insert(tk.END, "\n🚀 Starting Combined Browser History Project...\n\n")
 
     # Path to Chrome history (Linux default, adjust for Windows/Mac if needed)
-    src_path = os.path.expanduser("~/.config/google-chrome/Default/History")
+    src_path = os.path.join(os.environ["USERPROFILE"], "AppData", "Local",
+                        "Google", "Chrome", "User Data", "Default", "History")
+
     if not os.path.exists(src_path):
-        print("❌ Chrome history not found. Exiting.")
+        output_box.insert(tk.END, "❌ Chrome history not found. Exiting.\n")
+        root.mainloop()
         return
 
     # Copy to temp (avoid DB lock)
@@ -125,33 +134,31 @@ def main():
     # Clean up
     os.remove(temp_path)
 
-    # 4. Generate Final Report
-    with open("final_report.txt", "w", encoding="utf-8") as f:
-        f.write("===== FINAL REPORT =====\n\n")
+    # 4. Display Final Report in GUI
+    output_box.insert(tk.END, "===== FINAL REPORT =====\n\n")
 
-        f.write("🔹 Search Terms:\n")
-        for term, url in search_terms[:10]:
-            f.write(f" - {term} → {url}\n")
-        f.write("\n")
+    output_box.insert(tk.END, "🔹 Search Terms:\n")
+    for term, url in search_terms[:10]:
+        output_box.insert(tk.END, f" - {term} → {url}\n")
+    output_box.insert(tk.END, "\n")
 
-        f.write("🔹 Browsing History (recent):\n")
-        for url, title, count, last_visit in normal_history:
-            f.write(f" - {url} | Title: {title} | Visits: {count}\n")
-        f.write("\n")
+    output_box.insert(tk.END, "🔹 Browsing History (recent):\n")
+    for url, title, count, last_visit in normal_history:
+        output_box.insert(tk.END, f" - {url} | Title: {title} | Visits: {count}\n")
+    output_box.insert(tk.END, "\n")
 
-        f.write("🔹 Recovered Deleted URLs:\n")
-        for url in deleted_history[:10]:
-            f.write(f" - {url}\n")
-        f.write("\n")
+    output_box.insert(tk.END, "🔹 Recovered Deleted URLs:\n")
+    for url in deleted_history[:10]:
+        output_box.insert(tk.END, f" - {url}\n")
+    output_box.insert(tk.END, "\n")
 
-        if ml_report:
-            f.write("🔹 ML Classification Report:\n")
-            f.write(ml_report + "\n")
+    if ml_report:
+        output_box.insert(tk.END, "🔹 ML Classification Report:\n")
+        output_box.insert(tk.END, ml_report + "\n")
 
-        f.write("===== END OF REPORT =====\n")
-
-    print("✅ Final report saved as final_report.txt")
+    output_box.insert(tk.END, "===== END OF REPORT =====\n")
+    root.mainloop()
 
 
-if __name__ == "_main_":
-    main()
+if __name__ == "__main__":
+    main_gui()
