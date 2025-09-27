@@ -2,11 +2,11 @@
 
 
 a = Analysis(
-    ['kalaiselvi'],
+    ['kalaiselvi.py'],
     pathex=[],
     binaries=[],
-    datas=[],
-    hiddenimports=[],
+    datas=[('browsing_history.csv', '.')],
+    hiddenimports=['pkg_resources.py2_warn'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
