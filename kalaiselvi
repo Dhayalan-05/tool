@@ -153,5 +153,5 @@ def main():
     print("✅ Final report saved as final_report.txt")
 
 
-if _name_ == "_main_":
+if __name__ == "_main_":
     main()
