@@ -1,4 +1,5 @@
 import os
+import sys
 import tempfile
 import shutil
 import sqlite3
@@ -11,6 +12,15 @@ from sklearn.metrics import classification_report
 import scipy
 import tkinter as tk
 from tkinter import scrolledtext
+
+# ===== Helper to locate resources in EXE =====
+def resource_path(relative_path):
+    """Get absolute path for bundled EXE or normal script."""
+    if getattr(sys, 'frozen', False):  # Running as EXE
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 # ========== PERSON A ==========
 def extract_search_terms(history_db_path):
@@ -106,7 +116,7 @@ def main_gui():
 
     output_box.insert(tk.END, "\n🚀 Starting Combined Browser History Project...\n\n")
 
-    # Path to Chrome history (Linux default, adjust for Windows/Mac if needed)
+    # Path to Chrome history
     src_path = os.path.join(os.environ["USERPROFILE"], "AppData", "Local",
                         "Google", "Chrome", "User Data", "Default", "History")
 
@@ -128,8 +138,9 @@ def main_gui():
 
     # 3. Run ML analysis (from prepared browsing_history.csv)
     ml_report = None
-    if os.path.exists("browsing_history.csv"):
-        ml_report = run_ml_analysis("browsing_history.csv")
+    csv_file = resource_path("browsing_history.csv")
+    if os.path.exists(csv_file):
+        ml_report = run_ml_analysis(csv_file)
 
     # Clean up
     os.remove(temp_path)
