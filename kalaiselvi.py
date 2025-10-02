@@ -8,7 +8,6 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report
 import scipy
 import tkinter as tk
 from tkinter import scrolledtext
@@ -58,11 +57,9 @@ def recover_deleted_records(db_path):
     recovered = set()
     with open(db_path, "rb") as f:
         data = f.read()
-
     page_size = struct.unpack(">H", data[16:18])[0]
     if page_size == 1:
         page_size = 65536
-
     for i in range(0, len(data), page_size):
         page = data[i:i+page_size]
         if page[0] == 0x0D or page[0] == 0x00:
@@ -76,10 +73,10 @@ def recover_deleted_records(db_path):
     return list(recovered)
 
 # ========== PERSON C ==========
+#==============ML part-1++++++====
 def train_or_load_ml_model(csv_path):
     model_file = resource_path("rf_model.pkl")
     vector_file = resource_path("tfidf_vectorizer.pkl")
-
     if os.path.exists(model_file) and os.path.exists(vector_file):
         clf = joblib.load(model_file)
         tfidf = joblib.load(vector_file)
@@ -133,63 +130,76 @@ def main_gui():
     all_normal_history = []
     all_deleted_history = []
 
+    # Collect all history with profile info
     for profile in profiles:
         profile_path = os.path.join(chrome_user_data, profile, "History")
         if os.path.exists(profile_path):
             temp_path = os.path.join(tempfile.gettempdir(), f"History_copy_{profile}")
             shutil.copy2(profile_path, temp_path)
 
-            all_search_terms += extract_search_terms(temp_path)
-            all_normal_history += read_normal_history(temp_path)
-            all_deleted_history += recover_deleted_records(temp_path)
+            # Add profile info
+            search_terms = [(term, url, profile) for term, url in extract_search_terms(temp_path)]
+            normal_history = [(url, title, count, last_visit, profile) for url, title, count, last_visit in read_normal_history(temp_path)]
+            deleted_history = [(url, profile) for url in recover_deleted_records(temp_path)]
+
+            all_search_terms += search_terms
+            all_normal_history += normal_history
+            all_deleted_history += deleted_history
 
             os.remove(temp_path)
 
-    # Assign to main variables
     search_terms = all_search_terms
     normal_history = all_normal_history
     deleted_history = all_deleted_history
 
     # Train/load ML model
+
+    #===========ML part2+++==
     csv_file = resource_path("browsing_history.csv")
     clf = tfidf = None
     if os.path.exists(csv_file):
         clf, tfidf = train_or_load_ml_model(csv_file)
 
     # Predict categories for live history if ML available
+
+    #+++++++++++Ml part 3+++====#
     predictions = []
     if clf and tfidf:
-        df_live = pd.DataFrame(normal_history, columns=["url", "title", "visit_count", "last_visit_time"])
+        df_live = pd.DataFrame(normal_history, columns=["url", "title", "visit_count", "last_visit_time", "profile"])
         df_live["hour"] = pd.to_datetime(df_live["last_visit_time"]).dt.hour
-        df_live["duration"] = df_live["visit_count"]  # simple proxy
+        df_live["duration"] = df_live["visit_count"]
 
-        X_new = tfidf.transform(df_live["url"])
-        preds = clf.predict(X_new)
+        # ===== Include numeric features like training =====
+        X_url = tfidf.transform(df_live["url"])
+        X_numeric = df_live[["hour", "duration"]].values
+        X_final = scipy.sparse.hstack([X_url, X_numeric])
+        preds = clf.predict(X_final)
+
         df_live["predicted_category"] = preds
-        predictions = df_live[["url", "predicted_category"]].values.tolist()
+        predictions = df_live[["url", "predicted_category", "profile"]].values.tolist()
 
     # ===== Display in GUI =====
     output_box.insert(tk.END, "===== FINAL REPORT =====\n\n")
 
     output_box.insert(tk.END, "🔹 Search Terms:\n")
-    for term, url in search_terms[:10]:
-        output_box.insert(tk.END, f" - {term} → {url}\n")
+    for term, url, profile in search_terms[:10]:
+        output_box.insert(tk.END, f" - [{profile}] {term} → {url}\n")
     output_box.insert(tk.END, "\n")
 
     output_box.insert(tk.END, "🔹 Browsing History (recent):\n")
-    for url, title, count, last_visit in normal_history[:20]:
-        output_box.insert(tk.END, f" - {url} | Title: {title} | Visits: {count}\n")
+    for url, title, count, last_visit, profile in normal_history[:20]:
+        output_box.insert(tk.END, f" - [{profile}] {url} | Title: {title} | Visits: {count}\n")
     output_box.insert(tk.END, "\n")
 
     output_box.insert(tk.END, "🔹 Recovered Deleted URLs:\n")
-    for url in deleted_history[:10]:
-        output_box.insert(tk.END, f" - {url}\n")
+    for url, profile in deleted_history[:10]:
+        output_box.insert(tk.END, f" - [{profile}] {url}\n")
     output_box.insert(tk.END, "\n")
 
     if predictions:
         output_box.insert(tk.END, "🔹 ML Predictions for Live History:\n")
-        for url, category in predictions[:20]:
-            output_box.insert(tk.END, f" - {url} → {category}\n")
+        for url, category, profile in predictions[:20]:
+            output_box.insert(tk.END, f" - [{profile}] {url} → {category}\n")
         output_box.insert(tk.END, "\n")
 
     output_box.insert(tk.END, "===== END OF REPORT =====\n")
