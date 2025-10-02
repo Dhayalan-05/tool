@@ -1,0 +1,6 @@
+url,timestamp,duration,category
+https://www.youtube.com/watch?v=abc,2025-10-02 10:00:00,5,Entertainment
+https://www.google.com/search?q=python,2025-10-02 09:30:00,1,Search
+https://www.wikipedia.org/,2025-10-01 18:20:00,2,Education
+https://www.facebook.com/,2025-10-01 20:15:00,3,Social
+https://www.netflix.com/,2025-10-02 21:00:00,4,Entertainment
