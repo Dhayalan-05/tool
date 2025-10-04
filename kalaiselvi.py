@@ -1,210 +1,231 @@
 import os
-import sys
 import tempfile
 import shutil
 import sqlite3
-import struct
 import pandas as pd
-from sklearn.model_selection import train_test_split
+import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.ensemble import RandomForestClassifier
-import scipy
+import scipy.sparse
 import tkinter as tk
-from tkinter import scrolledtext
-import joblib
+from tkinter import ttk, messagebox
+import threading
 
-# ===== Helper to locate resources in EXE =====
-def resource_path(relative_path):
-    if getattr(sys, 'frozen', False):
-        base_path = sys._MEIPASS
-    else:
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
+# ===== Feature engineering & rules =====
+def extract_url_features(url):
+    u = url.lower()
+    length = len(u)
+    digits = sum(c.isdigit() for c in u)
+    digit_ratio = digits / max(1, length)
+    count_dash = u.count('-')
+    count_q = u.count('?')
+    count_slash = u.count('/')
+    count_eq = u.count('=')
+    has_ip = 1 if any(part.isdigit() and '.' in part for part in u.split('/')[:1]) else 0
+    tld_com = 1 if ".com" in u else 0
+    tld_org = 1 if ".org" in u else 0
+    tld_net = 1 if ".net" in u else 0
+    return [length, digits, round(digit_ratio,3), count_dash, count_q, count_slash, count_eq, has_ip, tld_com, tld_org, tld_net]
 
-# ========== PERSON A ==========
-def extract_search_terms(history_db_path):
-    search_terms = []
-    conn = sqlite3.connect(history_db_path)
-    cursor = conn.cursor()
-    try:
-        cursor.execute("SELECT term, url FROM keyword_search_terms JOIN urls ON keyword_search_terms.url_id = urls.id")
-        results = cursor.fetchall()
-        for term, url in results:
-            search_terms.append((term, url))
-    except sqlite3.Error:
-        pass
-    finally:
-        conn.close()
-    return search_terms
+def is_suspicious_rule(url):
+    u = url.lower()
+    suspicious_keywords = ["phish", "malware", "login", "verify", "secure", "update", "bank", "confirm"]
+    if any(k in u for k in suspicious_keywords):
+        return True, "Contains suspicious keyword"
+    if sum(c.isdigit() for c in u) > 8 and len(u) > 40:
+        return True, "Too many digits / long URL"
+    if ".." in u or "@@" in u:
+        return True, "Obfuscated pattern"
+    if u.count('-') > 6:
+        return True, "Many dashes"
+    return False, ""
 
-# ========== PERSON B ==========
+# ===== Browser history extraction =====
 def read_normal_history(db_path):
     urls = []
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
     try:
-        cursor.execute("SELECT url, title, visit_count, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 50")
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT url, title, visit_count, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 200")
         rows = cursor.fetchall()
         for url, title, count, last_visit in rows:
             urls.append((url, title, count, last_visit))
-    except Exception:
+    except:
         pass
     finally:
-        conn.close()
+        try: conn.close()
+        except: pass
     return urls
 
 def recover_deleted_records(db_path):
     recovered = set()
-    with open(db_path, "rb") as f:
-        data = f.read()
-    page_size = struct.unpack(">H", data[16:18])[0]
-    if page_size == 1:
-        page_size = 65536
-    for i in range(0, len(data), page_size):
-        page = data[i:i+page_size]
-        if page[0] == 0x0D or page[0] == 0x00:
-            try:
-                text = page.decode('utf-8', errors='ignore')
-                for line in text.split('\x00'):
-                    if line.startswith("http") or line.startswith("www"):
-                        recovered.add(line.strip())
-            except Exception:
-                continue
+    try:
+        with open(db_path, "rb") as f:
+            data = f.read()
+        page_size = int.from_bytes(data[16:18], byteorder='big')
+        if page_size == 1:
+            page_size = 65536
+        for i in range(0, len(data), page_size):
+            page = data[i:i+page_size]
+            if page[0] in (0x0D, 0x00):
+                try:
+                    text = page.decode('utf-8', errors='ignore')
+                    for line in text.split('\x00'):
+                        if line.startswith("http") or line.startswith("www"):
+                            recovered.add(line.strip())
+                except:
+                    continue
+    except:
+        pass
     return list(recovered)
 
-# ========== PERSON C ==========
-#==============ML part-1++++++====
-def train_or_load_ml_model(csv_path):
-    model_file = resource_path("rf_model.pkl")
-    vector_file = resource_path("tfidf_vectorizer.pkl")
-    if os.path.exists(model_file) and os.path.exists(vector_file):
-        clf = joblib.load(model_file)
-        tfidf = joblib.load(vector_file)
-    else:
-        df = pd.read_csv(csv_path)
-        df.columns = df.columns.str.strip().str.lower()
-        df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
-        df['hour'] = df['timestamp'].dt.hour
-        df['duration'] = pd.to_numeric(df['duration'], errors='coerce').fillna(0)
-        X = df[["url", "hour", "duration"]]
-        y = df["category"]
+# ===== Option B: training ML model =====
+def train_optionB_model():
+    train_urls = [
+        "youtube.com", "youtube.com/watch?v=abc", "m.youtube.com/shorts/xxx",
+        "wikipedia.org", "en.wikipedia.org/wiki/Machine_learning",
+        "facebook.com", "instagram.com", "twitter.com",
+        "coursera.org", "khanacademy.org", "edx.org", "stackoverflow.com",
+        "onlinegdb.com", "repl.it", "ideone.com",
+        "google.com/search?q=java+online+compiler",
+        "abc-phish.com/login", "secure-login-abc123.com", "xyz-malware.net/download",
+        "bank-update-verify.com/login", "login-secure.accounts-verify.net"
+    ]  # 21 items
 
-        tfidf = TfidfVectorizer()
-        X_url = tfidf.fit_transform(X["url"])
-        X_numeric = X[["hour", "duration"]].values
-        X_final = scipy.sparse.hstack([X_url, X_numeric])
+    train_labels = [
+        "Entertainment","Entertainment","Entertainment",
+        "Education","Education",
+        "Social","Social","Social",
+        "Education","Education","Education","Education",
+        "Education","Education","Education",
+        "Education",
+        "Malicious","Malicious","Malicious",
+        "Malicious","Malicious"
+    ]  # 21 items
 
-        X_train, X_test, y_train, y_test = train_test_split(X_final, y, test_size=0.2, random_state=42)
+    assert len(train_urls) == len(train_labels), "URLs and labels must match!"
 
-        clf = RandomForestClassifier(n_estimators=100, random_state=42)
-        clf.fit(X_train, y_train)
-
-        # Save model
-        joblib.dump(clf, model_file)
-        joblib.dump(tfidf, vector_file)
-
+    numeric_features = [extract_url_features(u) for u in train_urls]
+    X_numeric = scipy.sparse.csr_matrix(np.array(numeric_features))
+    tfidf = TfidfVectorizer(analyzer='char_wb', ngram_range=(3,6))
+    X_tfidf = tfidf.fit_transform(train_urls)
+    X_final = scipy.sparse.hstack([X_tfidf, X_numeric], format='csr')
+    clf = RandomForestClassifier(n_estimators=200, class_weight='balanced', random_state=42)
+    clf.fit(X_final, train_labels)
     return clf, tfidf
 
-# ========== PERSON D (YOU) ==========
+# ===== Main GUI =====
 def main_gui():
     root = tk.Tk()
-    root.title("Browser History Project Output")
-    root.geometry("950x650")
+    root.title("Browser History Project - Bulk ML")
+    root.geometry("1050x650")
 
-    output_box = scrolledtext.ScrolledText(root, wrap=tk.WORD, width=120, height=35)
-    output_box.pack(padx=10, pady=10)
+    center_frame = tk.Frame(root)
+    center_frame.pack(pady=10)
 
-    output_box.insert(tk.END, "\n🚀 Starting Combined Browser History Project...\n\n")
+    scan_btn = tk.Button(center_frame, text="Scan & Classify", width=25)
+    scan_btn.pack(pady=5)
 
-    chrome_user_data = os.path.join(os.environ["USERPROFILE"], "AppData", "Local", "Google", "Chrome", "User Data")
+    loading_var = tk.StringVar(value="")
+    loading_label = tk.Label(center_frame, textvariable=loading_var, fg="blue")
+    loading_label.pack(pady=5)
 
-    # Detect all profiles
-    profiles = []
-    if os.path.exists(os.path.join(chrome_user_data, "Default")):
-        profiles.append("Default")
-    for folder in os.listdir(chrome_user_data):
-        if folder.startswith("Profile"):
-            profiles.append(folder)
+    cols = ("profile", "url", "title", "visits", "category", "safety", "context")
+    tree = ttk.Treeview(root, columns=cols, show='headings', height=24)
+    for c in cols:
+        tree.heading(c, text=c.title())
+        tree.column(c, width=140 if c=='url' else 100, anchor='w')
+    tree.pack(fill=tk.BOTH, expand=True, padx=8, pady=6)
 
-    all_search_terms = []
-    all_normal_history = []
-    all_deleted_history = []
+    status = tk.StringVar(value="Ready")
+    tk.Label(root, textvariable=status).pack(fill=tk.X, padx=8, pady=4)
 
-    # Collect all history with profile info
-    for profile in profiles:
-        profile_path = os.path.join(chrome_user_data, profile, "History")
-        if os.path.exists(profile_path):
-            temp_path = os.path.join(tempfile.gettempdir(), f"History_copy_{profile}")
-            shutil.copy2(profile_path, temp_path)
+    def threaded_scan():
+        try:
+            loading_var.set("⏳ Loading... please wait")
+            status.set("Scanning Chrome history...")
+            scan_btn.config(state="disabled")
+            root.update_idletasks()
 
-            # Add profile info
-            search_terms = [(term, url, profile) for term, url in extract_search_terms(temp_path)]
-            normal_history = [(url, title, count, last_visit, profile) for url, title, count, last_visit in read_normal_history(temp_path)]
-            deleted_history = [(url, profile) for url in recover_deleted_records(temp_path)]
+            chrome_user_data = os.path.join(os.environ["USERPROFILE"], "AppData", "Local", "Google", "Chrome", "User Data")
+            profiles = []
+            if os.path.exists(os.path.join(chrome_user_data, "Default")):
+                profiles.append("Default")
+            for folder in os.listdir(chrome_user_data):
+                if folder.startswith("Profile") or folder == "Guest Profile":
+                    profiles.append(folder)
 
-            all_search_terms += search_terms
-            all_normal_history += normal_history
-            all_deleted_history += deleted_history
+            all_normal_history = []
+            all_deleted_history = []
 
-            os.remove(temp_path)
+            for profile in profiles:
+                history_db = os.path.join(chrome_user_data, profile, "History")
+                if os.path.exists(history_db):
+                    temp_path = os.path.join(tempfile.gettempdir(), f"History_copy_{profile}")
+                    shutil.copy2(history_db, temp_path)
+                    normal_history = [(url, title, count, last_visit, profile, "Guest" if profile=="Guest Profile" else "Normal")
+                                      for url, title, count, last_visit in read_normal_history(temp_path)]
+                    deleted_history = [(url, profile, "Deleted") for url in recover_deleted_records(temp_path)]
+                    all_normal_history += normal_history
+                    all_deleted_history += deleted_history
+                    try: os.remove(temp_path)
+                    except: pass
 
-    search_terms = all_search_terms
-    normal_history = all_normal_history
-    deleted_history = all_deleted_history
+            df_live = pd.DataFrame(all_normal_history, columns=["url", "title", "visit_count", "last_visit_time", "profile", "context"])
+            df_deleted = pd.DataFrame(all_deleted_history, columns=["url", "profile", "context"])
+            if not df_live.empty:
+                status.set("Training ML and predicting in bulk...")
+                root.update_idletasks()
 
-    # Train/load ML model
+                clf, tfidf = train_optionB_model()
 
-    #===========ML part2+++==
-    csv_file = resource_path("browsing_history.csv")
-    clf = tfidf = None
-    if os.path.exists(csv_file):
-        clf, tfidf = train_or_load_ml_model(csv_file)
+                urls = df_live['url'].tolist()
+                numeric_features = np.array([extract_url_features(u) for u in urls])
+                X_numeric = scipy.sparse.csr_matrix(numeric_features)
+                X_urls = tfidf.transform(urls)
+                X_final = scipy.sparse.hstack([X_urls, X_numeric], format='csr')
+                pred_categories = clf.predict(X_final)
 
-    # Predict categories for live history if ML available
+                safety_flags = []
+                for u, cat in zip(urls, pred_categories):
+                    suspicious_flag, _ = is_suspicious_rule(u)
+                    safety_flags.append("Malicious" if suspicious_flag or cat=="Malicious" else "Safe")
 
-    #+++++++++++Ml part 3+++====#
-    predictions = []
-    if clf and tfidf:
-        df_live = pd.DataFrame(normal_history, columns=["url", "title", "visit_count", "last_visit_time", "profile"])
-        df_live["hour"] = pd.to_datetime(df_live["last_visit_time"]).dt.hour
-        df_live["duration"] = df_live["visit_count"]
+                for r in tree.get_children():
+                    tree.delete(r)
+                for i, row in df_live.iterrows():
+                    tree.insert("", "end", values=(
+                        row['profile'],
+                        row['url'],
+                        row['title'][:60],
+                        row['visit_count'],
+                        pred_categories[i],
+                        safety_flags[i],
+                        row['context']
+                    ))
+                # Add deleted URLs
+                for i, row in df_deleted.iterrows():
+                    tree.insert("", "end", values=(
+                        row['profile'],
+                        row['url'],
+                        "",
+                        0,
+                        "Malicious",
+                        "Malicious",
+                        row['context']
+                    ))
 
-        # ===== Include numeric features like training =====
-        X_url = tfidf.transform(df_live["url"])
-        X_numeric = df_live[["hour", "duration"]].values
-        X_final = scipy.sparse.hstack([X_url, X_numeric])
-        preds = clf.predict(X_final)
+                status.set(f"Scan completed — {len(df_live)+len(df_deleted)} records processed")
+            else:
+                status.set("No history found for current user.")
+                messagebox.showinfo("No data", "No Chrome history found.")
 
-        df_live["predicted_category"] = preds
-        predictions = df_live[["url", "predicted_category", "profile"]].values.tolist()
+        finally:
+            loading_var.set("")
+            scan_btn.config(state="normal")
 
-    # ===== Display in GUI =====
-    output_box.insert(tk.END, "===== FINAL REPORT =====\n\n")
-
-    output_box.insert(tk.END, "🔹 Search Terms:\n")
-    for term, url, profile in search_terms[:10]:
-        output_box.insert(tk.END, f" - [{profile}] {term} → {url}\n")
-    output_box.insert(tk.END, "\n")
-
-    output_box.insert(tk.END, "🔹 Browsing History (recent):\n")
-    for url, title, count, last_visit, profile in normal_history[:20]:
-        output_box.insert(tk.END, f" - [{profile}] {url} | Title: {title} | Visits: {count}\n")
-    output_box.insert(tk.END, "\n")
-
-    output_box.insert(tk.END, "🔹 Recovered Deleted URLs:\n")
-    for url, profile in deleted_history[:10]:
-        output_box.insert(tk.END, f" - [{profile}] {url}\n")
-    output_box.insert(tk.END, "\n")
-
-    if predictions:
-        output_box.insert(tk.END, "🔹 ML Predictions for Live History:\n")
-        for url, category, profile in predictions[:20]:
-            output_box.insert(tk.END, f" - [{profile}] {url} → {category}\n")
-        output_box.insert(tk.END, "\n")
-
-    output_box.insert(tk.END, "===== END OF REPORT =====\n")
+    scan_btn.config(command=lambda: threading.Thread(target=threaded_scan, daemon=True).start())
     root.mainloop()
-
 
 if __name__ == "__main__":
     main_gui()

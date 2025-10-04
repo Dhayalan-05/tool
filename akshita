@@ -1,248 +1,231 @@
-#!/usr/bin/env python3
-"""
-full_browsing_extractor_notepad.py
-- Extracts browser history (Chrome/Edge/Brave/Firefox/Safari)
-- Attempts deleted-row recovery if 'undark' is installed
-- Optional memory dump extraction (Volatility strings)
-- No CSV files created
-- Output shown directly in Notepad/TextEdit/Gedit
-"""
+import os
+import tempfile
+import shutil
+import sqlite3
+import pandas as pd
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.ensemble import RandomForestClassifier
+import scipy.sparse
+import tkinter as tk
+from tkinter import ttk, messagebox
+import threading
 
-import os, sys, platform, shutil, tempfile, sqlite3, datetime, subprocess, re
-from pathlib import Path
-import argparse
+# ===== Feature engineering & rules =====
+def extract_url_features(url):
+    u = url.lower()
+    length = len(u)
+    digits = sum(c.isdigit() for c in u)
+    digit_ratio = digits / max(1, length)
+    count_dash = u.count('-')
+    count_q = u.count('?')
+    count_slash = u.count('/')
+    count_eq = u.count('=')
+    has_ip = 1 if any(part.isdigit() and '.' in part for part in u.split('/')[:1]) else 0
+    tld_com = 1 if ".com" in u else 0
+    tld_org = 1 if ".org" in u else 0
+    tld_net = 1 if ".net" in u else 0
+    return [length, digits, round(digit_ratio,3), count_dash, count_q, count_slash, count_eq, has_ip, tld_com, tld_org, tld_net]
 
-# ---------------------------
-# Time conversion helpers
-# ---------------------------
-def chrome_time_to_datetime(chrome_time):
-    try: return datetime.datetime(1601,1,1) + datetime.timedelta(microseconds=int(chrome_time))
-    except: return ""
+def is_suspicious_rule(url):
+    u = url.lower()
+    suspicious_keywords = ["phish", "malware", "login", "verify", "secure", "update", "bank", "confirm"]
+    if any(k in u for k in suspicious_keywords):
+        return True, "Contains suspicious keyword"
+    if sum(c.isdigit() for c in u) > 8 and len(u) > 40:
+        return True, "Too many digits / long URL"
+    if ".." in u or "@@" in u:
+        return True, "Obfuscated pattern"
+    if u.count('-') > 6:
+        return True, "Many dashes"
+    return False, ""
 
-def firefox_time_to_datetime(moz_us):
-    try: return datetime.datetime(1970,1,1) + datetime.timedelta(microseconds=int(moz_us))
-    except: return ""
-
-def safari_time_to_datetime(safari_sec):
-    try: return datetime.datetime(2001,1,1) + datetime.timedelta(seconds=float(safari_sec))
-    except: return ""
-
-# ---------------------------
-# Copy locked DB
-# ---------------------------
-def copy_history_file(src_path):
-    if not os.path.exists(src_path): return None
-    tmp = os.path.join(tempfile.gettempdir(), f"copy_{os.path.basename(src_path)}_{os.getpid()}")
-    shutil.copy2(src_path, tmp)
-    return tmp
-
-# ---------------------------
-# Deleted-row recovery (Chromium)
-# ---------------------------
-def attempt_deleted_recovery(db_path):
-    recovered = []
-    try:
-        from undark import Undark
-        und = Undark(db_path)
-        recs = und.recover_table("urls")
-        for r in recs:
-            try:
-                url = r[1] if len(r) > 1 else ""
-                title = r[2] if len(r) > 2 else ""
-                visit_count = r[3] if len(r) > 3 else 0
-                last_visit = r[5] if len(r) > 5 else ""
-                vt = chrome_time_to_datetime(last_visit) if last_visit else ""
-                recovered.append(["Recovered (deleted)", url, title, visit_count, vt])
-            except: continue
-    except: pass
-    return recovered
-
-# ---------------------------
-# Chromium-based history
-# ---------------------------
-def extract_chromium_history(db_path, browser_name):
-    data = []
-    try:
-        conn = sqlite3.connect(db_path)
-        cur = conn.cursor()
-        cur.execute("SELECT url, title, visit_count, last_visit_time FROM urls ORDER BY last_visit_time DESC")
-        for url, title, visit_count, last_visit_time in cur.fetchall():
-            vt = chrome_time_to_datetime(last_visit_time) if last_visit_time else ""
-            data.append([browser_name, url or "", title or "", visit_count or 0, vt])
-        conn.close()
-    except: pass
-    data.extend(attempt_deleted_recovery(db_path))
-    return data
-
-# ---------------------------
-# Firefox history
-# ---------------------------
-def extract_firefox_history(profile_dir):
-    data = []
-    for root, dirs, files in os.walk(profile_dir):
-        if "places.sqlite" in files:
-            tmp = copy_history_file(os.path.join(root,"places.sqlite"))
-            try:
-                conn = sqlite3.connect(tmp)
-                cur = conn.cursor()
-                cur.execute("""
-                    SELECT moz_places.url, moz_places.title, moz_places.visit_count, moz_historyvisits.visit_date
-                    FROM moz_places
-                    JOIN moz_historyvisits ON moz_places.id = moz_historyvisits.place_id
-                    ORDER BY visit_date DESC
-                """)
-                for url, title, visit_count, visit_date in cur.fetchall():
-                    vt = firefox_time_to_datetime(visit_date) if visit_date else ""
-                    data.append(["Firefox", url or "", title or "", visit_count or 0, vt])
-                conn.close()
-            except: pass
-            try: os.remove(tmp)
-            except: pass
-    return data
-
-# ---------------------------
-# Safari history
-# ---------------------------
-def extract_safari_history(db_path):
-    data = []
-    tmp = copy_history_file(db_path)
-    if not tmp: return data
-    try:
-        conn = sqlite3.connect(tmp)
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT history_items.url, history_items.title, history_visits.visit_time
-            FROM history_items JOIN history_visits
-            ON history_items.id = history_visits.history_item
-            ORDER BY history_visits.visit_time DESC
-        """)
-        for url, title, visit_time in cur.fetchall():
-            vt = safari_time_to_datetime(visit_time)
-            data.append(["Safari", url or "", title or "", "", vt])
-        conn.close()
-    except: pass
-    try: os.remove(tmp)
-    except: pass
-    return data
-
-# ---------------------------
-# Browser paths by OS
-# ---------------------------
-def get_browser_paths():
-    home = str(Path.home())
-    user_os = platform.system()
-    p = {}
-    if user_os == "Windows":
-        local = os.environ.get("LOCALAPPDATA","")
-        roaming = os.environ.get("APPDATA","")
-        p = {
-            "Chrome": os.path.join(local,r"Google\Chrome\User Data\Default\History"),
-            "Edge": os.path.join(local,r"Microsoft\Edge\User Data\Default\History"),
-            "Brave": os.path.join(local,r"BraveSoftware\Brave-Browser\User Data\Default\History"),
-            "Firefox": os.path.join(roaming,r"Mozilla\Firefox\Profiles")
-        }
-    elif user_os == "Darwin":
-        p = {
-            "Chrome": os.path.join(home,"Library/Application Support/Google/Chrome/Default/History"),
-            "Edge": os.path.join(home,"Library/Application Support/Microsoft Edge/Default/History"),
-            "Brave": os.path.join(home,"Library/Application Support/BraveSoftware/Brave-Browser/Default/History"),
-            "Safari": os.path.join(home,"Library/Safari/History.db"),
-            "Firefox": os.path.join(home,"Library/Application Support/Firefox/Profiles")
-        }
-    else:
-        p = {
-            "Chrome": os.path.join(home,".config/google-chrome/Default/History"),
-            "Edge": os.path.join(home,".config/microsoft-edge/Default/History"),
-            "Brave": os.path.join(home,".config/BraveSoftware/Brave-Browser/Default/History"),
-            "Firefox": os.path.join(home,".mozilla/firefox")
-        }
-    return p
-
-# ---------------------------
-# Volatility memory strings (optional)
-# ---------------------------
-URL_REGEX = re.compile(r"https?://[^\s'\"<>]+", re.IGNORECASE)
-def run_volatility_strings(memory_file):
-    tmp_out = os.path.join(tempfile.gettempdir(), "vol_strings.txt")
-    commands_to_try = [
-        ["vol.py","-f",memory_file,"windows.strings","--output","text","--output-file",tmp_out],
-        ["vol","-f",memory_file,"windows.strings","--output","text","--output-file",tmp_out],
-        ["python","vol.py","-f",memory_file,"windows.strings","--output","text","--output-file",tmp_out],
-        ["python3","vol.py","-f",memory_file,"windows.strings","--output","text","--output-file",tmp_out]
-    ]
-    for cmd in commands_to_try:
-        try:
-            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            return tmp_out
-        except: continue
-    return None
-
-def parse_strings_for_urls(strings_file):
+# ===== Browser history extraction =====
+def read_normal_history(db_path):
     urls = []
     try:
-        with open(strings_file,"r",errors="ignore") as f:
-            for line in f:
-                for m in URL_REGEX.finditer(line):
-                    urls.append(["Memory (strings)", m.group(0), "", "", ""])
-    except: pass
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT url, title, visit_count, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 200")
+        rows = cursor.fetchall()
+        for url, title, count, last_visit in rows:
+            urls.append((url, title, count, last_visit))
+    except:
+        pass
+    finally:
+        try: conn.close()
+        except: pass
     return urls
 
-# ---------------------------
-# Open in Notepad/TextEdit/Gedit
-# ---------------------------
-def open_in_notepad(text_lines):
-    tmp_file = tempfile.NamedTemporaryFile(delete=False, mode="w", encoding="utf-8", suffix=".txt")
-    for line in text_lines:
-        tmp_file.write(line + "\n")
-    tmp_file.close()
-    user_os = platform.system()
+def recover_deleted_records(db_path):
+    recovered = set()
     try:
-        if user_os == "Windows": subprocess.Popen(["notepad.exe", tmp_file.name])
-        elif user_os == "Darwin": subprocess.Popen(["open","-a","TextEdit", tmp_file.name])
-        else: subprocess.Popen(["gedit", tmp_file.name])
-    except Exception as e:
-        print("Could not open text editor:", e)
+        with open(db_path, "rb") as f:
+            data = f.read()
+        page_size = int.from_bytes(data[16:18], byteorder='big')
+        if page_size == 1:
+            page_size = 65536
+        for i in range(0, len(data), page_size):
+            page = data[i:i+page_size]
+            if page[0] in (0x0D, 0x00):
+                try:
+                    text = page.decode('utf-8', errors='ignore')
+                    for line in text.split('\x00'):
+                        if line.startswith("http") or line.startswith("www"):
+                            recovered.add(line.strip())
+                except:
+                    continue
+    except:
+        pass
+    return list(recovered)
 
-# ---------------------------
-# Main
-# ---------------------------
-def main():
-    parser = argparse.ArgumentParser(description="Full browsing extractor + memory parsing")
-    parser.add_argument("--memory", help="Path to memory dump (optional)")
-    args = parser.parse_args()
+# ===== Option B: training ML model =====
+def train_optionB_model():
+    train_urls = [
+        "youtube.com", "youtube.com/watch?v=abc", "m.youtube.com/shorts/xxx",
+        "wikipedia.org", "en.wikipedia.org/wiki/Machine_learning",
+        "facebook.com", "instagram.com", "twitter.com",
+        "coursera.org", "khanacademy.org", "edx.org", "stackoverflow.com",
+        "onlinegdb.com", "repl.it", "ideone.com",
+        "google.com/search?q=java+online+compiler",
+        "abc-phish.com/login", "secure-login-abc123.com", "xyz-malware.net/download",
+        "bank-update-verify.com/login", "login-secure.accounts-verify.net"
+    ]  # 21 items
 
-    paths = get_browser_paths()
-    all_data = []
+    train_labels = [
+        "Entertainment","Entertainment","Entertainment",
+        "Education","Education",
+        "Social","Social","Social",
+        "Education","Education","Education","Education",
+        "Education","Education","Education",
+        "Education",
+        "Malicious","Malicious","Malicious",
+        "Malicious","Malicious"
+    ]  # 21 items
 
-    for browser, path in paths.items():
-        if not os.path.exists(path): continue
-        data = []
-        if "Firefox" in browser:
-            data = extract_firefox_history(path)
-        elif "Safari" in browser:
-            data = extract_safari_history(path)
-        else:
-            data = extract_chromium_history(path, browser)
-        all_data.extend(data)
+    assert len(train_urls) == len(train_labels), "URLs and labels must match!"
 
-    # Memory dump URLs
-    if args.memory and os.path.exists(args.memory):
-        strings_file = run_volatility_strings(args.memory)
-        if strings_file: all_data.extend(parse_strings_for_urls(strings_file))
+    numeric_features = [extract_url_features(u) for u in train_urls]
+    X_numeric = scipy.sparse.csr_matrix(np.array(numeric_features))
+    tfidf = TfidfVectorizer(analyzer='char_wb', ngram_range=(3,6))
+    X_tfidf = tfidf.fit_transform(train_urls)
+    X_final = scipy.sparse.hstack([X_tfidf, X_numeric], format='csr')
+    clf = RandomForestClassifier(n_estimators=200, class_weight='balanced', random_state=42)
+    clf.fit(X_final, train_labels)
+    return clf, tfidf
 
-    # Prepare output lines
-    output_lines = []
-    header = f"{'Source':20} | {'URL':50} | {'Title':30} | {'Count':5} | {'Last Visit'}"
-    output_lines.append(header)
-    output_lines.append("-"*130)
-    for row in all_data:
-        s,u,t,c,vt = row
-        vt_str = str(vt)
-        line = f"{s:20} | {u[:50]:50} | {t[:30]:30} | {str(c):5} | {vt_str}"
-        output_lines.append(line)
+# ===== Main GUI =====
+def main_gui():
+    root = tk.Tk()
+    root.title("Browser History Project - Bulk ML")
+    root.geometry("1050x650")
 
-    # Open directly in Notepad/TextEdit/Gedit
-    open_in_notepad(output_lines)
+    center_frame = tk.Frame(root)
+    center_frame.pack(pady=10)
 
-if __name__=="__main__":
-    main()
+    scan_btn = tk.Button(center_frame, text="Scan & Classify", width=25)
+    scan_btn.pack(pady=5)
+
+    loading_var = tk.StringVar(value="")
+    loading_label = tk.Label(center_frame, textvariable=loading_var, fg="blue")
+    loading_label.pack(pady=5)
+
+    cols = ("profile", "url", "title", "visits", "category", "safety", "context")
+    tree = ttk.Treeview(root, columns=cols, show='headings', height=24)
+    for c in cols:
+        tree.heading(c, text=c.title())
+        tree.column(c, width=140 if c=='url' else 100, anchor='w')
+    tree.pack(fill=tk.BOTH, expand=True, padx=8, pady=6)
+
+    status = tk.StringVar(value="Ready")
+    tk.Label(root, textvariable=status).pack(fill=tk.X, padx=8, pady=4)
+
+    def threaded_scan():
+        try:
+            loading_var.set("⏳ Loading... please wait")
+            status.set("Scanning Chrome history...")
+            scan_btn.config(state="disabled")
+            root.update_idletasks()
+
+            chrome_user_data = os.path.join(os.environ["USERPROFILE"], "AppData", "Local", "Google", "Chrome", "User Data")
+            profiles = []
+            if os.path.exists(os.path.join(chrome_user_data, "Default")):
+                profiles.append("Default")
+            for folder in os.listdir(chrome_user_data):
+                if folder.startswith("Profile") or folder == "Guest Profile":
+                    profiles.append(folder)
+
+            all_normal_history = []
+            all_deleted_history = []
+
+            for profile in profiles:
+                history_db = os.path.join(chrome_user_data, profile, "History")
+                if os.path.exists(history_db):
+                    temp_path = os.path.join(tempfile.gettempdir(), f"History_copy_{profile}")
+                    shutil.copy2(history_db, temp_path)
+                    normal_history = [(url, title, count, last_visit, profile, "Guest" if profile=="Guest Profile" else "Normal")
+                                      for url, title, count, last_visit in read_normal_history(temp_path)]
+                    deleted_history = [(url, profile, "Deleted") for url in recover_deleted_records(temp_path)]
+                    all_normal_history += normal_history
+                    all_deleted_history += deleted_history
+                    try: os.remove(temp_path)
+                    except: pass
+
+            df_live = pd.DataFrame(all_normal_history, columns=["url", "title", "visit_count", "last_visit_time", "profile", "context"])
+            df_deleted = pd.DataFrame(all_deleted_history, columns=["url", "profile", "context"])
+            if not df_live.empty:
+                status.set("Training ML and predicting in bulk...")
+                root.update_idletasks()
+
+                clf, tfidf = train_optionB_model()
+
+                urls = df_live['url'].tolist()
+                numeric_features = np.array([extract_url_features(u) for u in urls])
+                X_numeric = scipy.sparse.csr_matrix(numeric_features)
+                X_urls = tfidf.transform(urls)
+                X_final = scipy.sparse.hstack([X_urls, X_numeric], format='csr')
+                pred_categories = clf.predict(X_final)
+
+                safety_flags = []
+                for u, cat in zip(urls, pred_categories):
+                    suspicious_flag, _ = is_suspicious_rule(u)
+                    safety_flags.append("Malicious" if suspicious_flag or cat=="Malicious" else "Safe")
+
+                for r in tree.get_children():
+                    tree.delete(r)
+                for i, row in df_live.iterrows():
+                    tree.insert("", "end", values=(
+                        row['profile'],
+                        row['url'],
+                        row['title'][:60],
+                        row['visit_count'],
+                        pred_categories[i],
+                        safety_flags[i],
+                        row['context']
+                    ))
+                # Add deleted URLs
+                for i, row in df_deleted.iterrows():
+                    tree.insert("", "end", values=(
+                        row['profile'],
+                        row['url'],
+                        "",
+                        0,
+                        "Malicious",
+                        "Malicious",
+                        row['context']
+                    ))
+
+                status.set(f"Scan completed — {len(df_live)+len(df_deleted)} records processed")
+            else:
+                status.set("No history found for current user.")
+                messagebox.showinfo("No data", "No Chrome history found.")
+
+        finally:
+            loading_var.set("")
+            scan_btn.config(state="normal")
+
+    scan_btn.config(command=lambda: threading.Thread(target=threaded_scan, daemon=True).start())
+    root.mainloop()
+
+if __name__ == "__main__":
+    main_gui()
