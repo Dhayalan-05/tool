@@ -1,4 +1,4 @@
-# portable_forensic_allinone.py
+# portable_forensic_allinone_safe_visitcount.py
 import os
 import shutil
 import sqlite3
@@ -13,19 +13,24 @@ import numpy as np
 import glob
 import time
 
-# Optional ML libs - required for classifier
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.ensemble import RandomForestClassifier
 
-# ----------------- Configuration -----------------
-POLL_INTERVAL_SECONDS = 6          # monitor polling interval
-RECENT_WINDOW_SECONDS = 300        # consider an entry "recent" if within this many seconds
-ML_SUSPICIOUS_PROB = 0.7           # placeholder threshold (not used for RandomForest predict_proba here)
+# ---------------- Configuration ----------------
+POLL_INTERVAL_SECONDS = 6
+ML_SUSPICIOUS_PROB = 0.7
 DOWNLOADS_PATH = os.path.expanduser("~/Downloads")
-CHROME_USERDATA = os.path.expanduser(r"~\AppData\Local\Google\Chrome\User Data")
 SUSPICIOUS_BLACKLIST = {"malware.com", "phishing.net", "suspicious.org"}
 
-# ----------------- Helpers -----------------
+BROWSERS = {
+    "Chrome": os.path.expanduser(r"~\AppData\Local\Google\Chrome\User Data"),
+    "Edge": os.path.expanduser(r"~\AppData\Local\Microsoft\Edge\User Data"),
+    "Brave": os.path.expanduser(r"~\AppData\Local\BraveSoftware\Brave-Browser\User Data"),
+    "Opera": os.path.expanduser(r"~\AppData\Roaming\Opera Software\Opera Stable"),
+    "Firefox": os.path.expanduser(r"~\AppData\Roaming\Mozilla\Firefox\Profiles"),
+}
+
+# ---------------- Helpers ----------------
 def extract_domain(url):
     try:
         return urlparse(url).netloc.lower()
@@ -34,8 +39,17 @@ def extract_domain(url):
 
 def convert_chrome_time(microseconds):
     try:
-        if microseconds and microseconds > 0 and microseconds < 11644473600000000:
+        if microseconds and 0 < microseconds < 11644473600000000:
             return datetime(1601, 1, 1) + timedelta(microseconds=int(microseconds))
+        else:
+            return None
+    except:
+        return None
+
+def convert_firefox_time(microseconds):
+    try:
+        if microseconds and microseconds > 0:
+            return datetime(1970,1,1) + timedelta(microseconds=int(microseconds))
         else:
             return None
     except:
@@ -50,33 +64,26 @@ def hash_file(path):
         return h.hexdigest()
     return None
 
-# ----------------- Small built-in ML classifier -----------------
-TRAIN_URLS = [
-    'https://www.khanacademy.org', 'https://www.harvard.edu', 'https://www.coursera.org',
-    'https://www.facebook.com', 'https://www.instagram.com', 'https://twitter.com',
-    'https://www.amazon.com', 'https://www.flipkart.com', 'https://www.ebay.com',
-    'https://www.bbc.com/news', 'https://www.cnn.com', 'https://timesofindia.indiatimes.com'
-]
-TRAIN_LABELS = [
-    'Education', 'Education', 'Education',
-    'Social Media', 'Social Media', 'Social Media',
-    'E-commerce', 'E-commerce', 'E-commerce',
-    'News', 'News', 'News'
-]
+# ---------------- ML Classifier ----------------
+TRAIN_URLS = ['https://www.khanacademy.org','https://www.harvard.edu','https://www.coursera.org',
+              'https://www.facebook.com','https://www.instagram.com','https://twitter.com',
+              'https://www.amazon.com','https://www.flipkart.com','https://www.ebay.com',
+              'https://www.bbc.com/news','https://www.cnn.com','https://timesofindia.indiatimes.com']
+TRAIN_LABELS = ['Education','Education','Education','Social Media','Social Media','Social Media',
+                'E-commerce','E-commerce','E-commerce','News','News','News']
 vectorizer = TfidfVectorizer(analyzer='char_wb', ngram_range=(3,5))
 X_train = vectorizer.fit_transform(TRAIN_URLS)
 clf = RandomForestClassifier(n_estimators=50, random_state=42)
 clf.fit(X_train, TRAIN_LABELS)
 
-def predict_category(url):
+def predict_category_batch(url_series):
     try:
-        x = vectorizer.transform([str(url)])
-        return clf.predict(x)[0]
+        X = vectorizer.transform(url_series.astype(str))
+        return clf.predict(X)
     except:
-        return "Other"
+        return pd.Series(['Other']*len(url_series))
 
-# ----------------- In-memory alerts store -----------------
-# columns: timestamp (datetime), dst_domain, description, profile, src (monitor type)
+# ---------------- Alerts ----------------
 alerts_lock = threading.Lock()
 alerts_df = pd.DataFrame(columns=['timestamp','dst_domain','description','profile','src'])
 
@@ -91,98 +98,117 @@ def add_alert(ts, domain, desc, profile="Unknown", src="monitor"):
             'src': src
         }])], ignore_index=True)
 
-# ----------------- Browser history extraction -----------------
-def extract_browser_history(log_callback=None):
-    base_path = CHROME_USERDATA
-    profile_paths = glob.glob(os.path.join(base_path, "*"))
+# ---------------- Browser Extraction ----------------
+def extract_browser_history(browser="Chrome", log_callback=None):
+    base_path = BROWSERS.get(browser)
+    if not base_path or not os.path.exists(base_path):
+        if log_callback:
+            log_callback(f"{browser} not installed or path missing.")
+        return pd.DataFrame()
+
     all_dfs = []
-    if log_callback:
-        log_callback(f"Scanning profiles in: {base_path}")
-    for profile in profile_paths:
-        profile_name = os.path.basename(profile)
-        history_db = os.path.join(profile, "History")
-        if not os.path.exists(history_db):
-            if log_callback:
-                log_callback(f"Skipping (no History): {profile_name}")
-            continue
-        tmp_db = os.path.join(os.environ.get("TEMP"), f"history_{profile_name}.db")
-        try:
-            shutil.copy2(history_db, tmp_db)
-        except Exception as e:
-            if log_callback:
-                log_callback(f"Copy error for {profile_name}: {e}")
-            continue
-        try:
-            conn = sqlite3.connect(tmp_db)
-            query = "SELECT url, title, last_visit_time, visit_count FROM urls"
-            df = pd.read_sql_query(query, conn)
-        except Exception as e:
-            if log_callback:
-                log_callback(f"Read error {profile_name}: {e}")
+
+    if browser.lower() != 'firefox':
+        profile_paths = glob.glob(os.path.join(base_path, '*')) if browser.lower() != 'opera' else [base_path]
+
+        for profile in profile_paths:
+            profile_name = os.path.basename(profile)
+            history_db = os.path.join(profile, 'History')
+            if not os.path.exists(history_db):
+                continue
+
+            tmp_db = os.path.join(os.environ.get('TEMP'), f'history_{browser}_{profile_name}.db')
             try:
+                shutil.copy2(history_db, tmp_db)
+                conn = sqlite3.connect(tmp_db)
+                df = pd.read_sql_query("SELECT url,title,last_visit_time,visit_count FROM urls", conn)
                 conn.close()
-            except:
-                pass
-            try:
                 os.remove(tmp_db)
             except:
-                pass
-            continue
-        conn.close()
-        try:
-            os.remove(tmp_db)
-        except:
-            pass
+                continue
 
-        # Convert and annotate
-        df['Deleted'] = df['last_visit_time'].apply(lambda x: True if x == 0 else False)
-        df['timestamp'] = df['last_visit_time'].apply(convert_chrome_time)
-        df['domain'] = df['url'].apply(extract_domain)
-        df['profile'] = profile_name
-        df['guest_mode'] = 'guest' in profile_name.lower() or 'guest profile' in profile_name.lower()
+            # ---------------- Safe handling ----------------
+            if 'visit_count' not in df.columns:
+                df['visit_count'] = np.nan  # Set to NULL if missing
 
-        # visit_count per domain
-        domain_counts = df.groupby('domain')['url'].count().reset_index(name='visit_count')
-        df = df.merge(domain_counts, on='domain', how='left', suffixes=('','_domain'))
+            df['Deleted'] = df['last_visit_time'] == 0
+            df['timestamp'] = df['last_visit_time'].apply(convert_chrome_time)
+            df['domain'] = df['url'].apply(extract_domain)
+            df['profile'] = profile_name
+            df['guest_mode'] = 'guest' in profile_name.lower()
 
-        # classify
-        df['site_type'] = df['domain'].apply(predict_category)
-        # placeholder ml_score (use real model later if available)
-        df['ml_score'] = np.random.rand(len(df))
+            if 'url' in df.columns:
+                domain_counts = df.groupby('domain')['url'].count().reset_index(name='visit_count_domain')
+                df = df.merge(domain_counts, on='domain', how='left')
+            else:
+                df['visit_count_domain'] = np.nan
 
-        # pick desired columns
-        all_dfs.append(df[['profile','guest_mode','Deleted','timestamp','url','domain','visit_count','ml_score','site_type']])
-        if log_callback:
-            log_callback(f"Read {len(df)} rows from {profile_name}")
-    if all_dfs:
-        combined = pd.concat(all_dfs, ignore_index=True)
-        combined = combined.sort_values('timestamp', ascending=False).reset_index(drop=True)
-        return combined
-    return pd.DataFrame()
+            df['site_type'] = predict_category_batch(df['url'])
+            df['ml_score'] = np.random.rand(len(df))
+            df['browser'] = browser
+            all_dfs.append(df[['browser','profile','guest_mode','Deleted','timestamp','url','domain','visit_count','visit_count_domain','ml_score','site_type']])
+    else:
+        # Firefox
+        profile_paths = glob.glob(os.path.join(base_path, '*'))
+        for profile in profile_paths:
+            profile_name = os.path.basename(profile)
+            history_db = os.path.join(profile, 'places.sqlite')
+            if not os.path.exists(history_db):
+                continue
 
-# ----------------- Correlation (uses in-memory alerts instead of external CSV) -----------------
+            tmp_db = os.path.join(os.environ.get('TEMP'), f'history_firefox_{profile_name}.db')
+            try:
+                shutil.copy2(history_db, tmp_db)
+                conn = sqlite3.connect(tmp_db)
+                df = pd.read_sql_query("SELECT url,title,last_visit_date AS last_visit_time,visit_count FROM moz_places", conn)
+                conn.close()
+                os.remove(tmp_db)
+            except:
+                continue
+
+            if 'visit_count' not in df.columns:
+                df['visit_count'] = np.nan
+
+            df['Deleted'] = df['last_visit_time'] == 0
+            df['timestamp'] = df['last_visit_time'].apply(convert_firefox_time)
+            df['domain'] = df['url'].apply(extract_domain)
+            df['profile'] = profile_name
+            df['guest_mode'] = False
+
+            if 'url' in df.columns:
+                domain_counts = df.groupby('domain')['url'].count().reset_index(name='visit_count_domain')
+                df = df.merge(domain_counts, on='domain', how='left')
+            else:
+                df['visit_count_domain'] = np.nan
+
+            df['site_type'] = predict_category_batch(df['url'])
+            df['ml_score'] = np.random.rand(len(df))
+            df['browser'] = browser
+            all_dfs.append(df[['browser','profile','guest_mode','Deleted','timestamp','url','domain','visit_count','visit_count_domain','ml_score','site_type']])
+
+    return pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
+
+# ---------------- Correlation ----------------
 def correlate_with_alerts(browser_df, alerts_df_local, window_minutes=2):
-    """Return browser rows that match alerts by domain and time window."""
     if browser_df.empty or alerts_df_local.empty:
         return pd.DataFrame()
-    # ensure timestamp types
     bd = browser_df.copy()
     bd = bd[bd['timestamp'].notna()].copy()
     ad = alerts_df_local.copy()
     ad['timestamp'] = pd.to_datetime(ad['timestamp'])
-
     merged = pd.merge(bd, ad, left_on='domain', right_on='dst_domain', how='left', suffixes=('_b','_a'))
     merged['time_diff'] = (merged['timestamp'] - merged['timestamp_a']).abs().dt.total_seconds()
     timeline = merged[merged['time_diff'] <= window_minutes*60].sort_values('timestamp')
     return timeline
 
-# ----------------- Monitor: polls history & downloads -----------------
+# ---------------- Monitor ----------------
 class LiveMonitor(threading.Thread):
-    def __init__(self, gui_log, interval=POLL_INTERVAL_SECONDS):
+    def __init__(self, gui_log, selected_browsers, interval=POLL_INTERVAL_SECONDS):
         super().__init__(daemon=True)
         self.interval = interval
         self.log = gui_log
         self._stop = threading.Event()
+        self.selected_browsers = selected_browsers
         self.last_seen_urls = set()
         self.last_seen_downloads = set()
 
@@ -191,58 +217,43 @@ class LiveMonitor(threading.Thread):
 
     def run(self):
         self.log("Live monitor started.")
-        # seed last_seen from current history + downloads
-        try:
-            df = extract_browser_history(log_callback=self.log)
-            if not df.empty:
-                self.last_seen_urls = set(df['url'].astype(str).tolist())
-        except Exception as e:
-            self.log(f"Monitor seed history error: {e}")
+        for browser in self.selected_browsers:
+            try:
+                df = extract_browser_history(browser=browser)
+                if not df.empty:
+                    self.last_seen_urls.update(df['url'].astype(str).tolist())
+                    self.log(f"Seeded URLs from {browser}: {len(df)} rows")
+            except Exception as e:
+                self.log(f"Monitor seed error for {browser}: {e}")
 
-        try:
-            if os.path.exists(DOWNLOADS_PATH):
-                self.last_seen_downloads = set(os.listdir(DOWNLOADS_PATH))
-        except Exception as e:
-            self.log(f"Monitor seed downloads error: {e}")
+        if os.path.exists(DOWNLOADS_PATH):
+            self.last_seen_downloads = set(os.listdir(DOWNLOADS_PATH))
 
         while not self._stop.is_set():
             try:
-                df = extract_browser_history(log_callback=None)
-                if not df.empty:
-                    # check for new URLs
-                    current_urls = set(df['url'].astype(str).tolist())
-                    new_urls = current_urls - self.last_seen_urls
-                    if new_urls:
-                        for url in list(new_urls)[:50]:  # cap to avoid flooding
-                            domain = extract_domain(url)
-                            row = df[df['url'] == url].iloc[0]
-                            now = datetime.utcnow()
-                            # suspicious if blacklist or certain site types
-                            descs = []
-                            if domain in SUSPICIOUS_BLACKLIST:
-                                descs.append("Blacklisted domain")
-                            if row.get('site_type','') in ('E-commerce',) and row.get('ml_score',0) > ML_SUSPICIOUS_PROB:
-                                descs.append("High-risk e-commerce behaviour")
-                            if row.get('site_type','') == 'Other' and row.get('ml_score',0) > 0.95:
-                                descs.append("Very unusual site (high score)")
+                for browser in self.selected_browsers:
+                    df = extract_browser_history(browser=browser)
+                    if not df.empty:
+                        current_urls = set(df['url'].astype(str).tolist())
+                        new_urls = current_urls - self.last_seen_urls
+                        if new_urls:
+                            for url in list(new_urls)[:50]:
+                                domain = extract_domain(url)
+                                row = df[df['url'] == url].iloc[0]
+                                now = datetime.utcnow()
+                                descs = []
+                                if domain in SUSPICIOUS_BLACKLIST:
+                                    descs.append("Blacklisted domain")
+                                if row.get('site_type','') in ('E-commerce',) and row.get('ml_score',0) > ML_SUSPICIOUS_PROB:
+                                    descs.append("High-risk e-commerce behaviour")
+                                if row.get('site_type','') == 'Other' and row.get('ml_score',0) > 0.95:
+                                    descs.append("Very unusual site (high score)")
+                                if descs:
+                                    desc = "; ".join(descs)
+                                    add_alert(now, domain, f"New URL matched: {url} -> {desc}", profile=row.get('profile','Unknown'), src='history-monitor')
+                                    self.log(f"ALERT (history): {domain} — {desc}")
+                                self.last_seen_urls = current_urls
 
-                            if descs:
-                                desc = "; ".join(descs)
-                                add_alert(now, domain, f"New URL matched: {url} -> {desc}", profile=row.get('profile','Unknown'), src='history-monitor')
-                                # notify GUI
-                                self.log(f"ALERT (history): {domain} — {desc}")
-                                # popup on GUI thread
-                                try:
-                                    self._popup_alert(domain, desc, source='history')
-                                except:
-                                    pass
-                            # even if not suspicious, still add lightweight monitoring alert for certain categories
-                            if domain in SUSPICIOUS_BLACKLIST and not descs:
-                                add_alert(now, domain, f"Visited blacklisted domain {domain}", profile=row.get('profile','Unknown'), src='history-monitor')
-                                self.log(f"ALERT (blacklist): {domain}")
-                        self.last_seen_urls = current_urls
-
-                # check downloads folder for new files
                 if os.path.exists(DOWNLOADS_PATH):
                     current_dl = set(os.listdir(DOWNLOADS_PATH))
                     new_files = current_dl - self.last_seen_downloads
@@ -252,45 +263,46 @@ class LiveMonitor(threading.Thread):
                             fh = hash_file(path)
                             add_alert(datetime.utcnow(), '', f"New download: {fname} (hash={fh})", profile="Local", src='download-monitor')
                             self.log(f"ALERT (download): {fname}")
-                            self._popup_alert(fname, "New download detected", source='download')
                         self.last_seen_downloads = current_dl
-
             except Exception as e:
                 self.log(f"Monitor error: {e}")
-
             time.sleep(self.interval)
 
-    def _popup_alert(self, title, text, source='monitor'):
-        # show popup from GUI thread - schedule with after() if possible
-        try:
-            # we assume there's a global app variable (created later)
-            app.after(1, lambda: messagebox.showwarning(f"Security Alert ({source})", f"{title}\n\n{text}"))
-        except Exception:
-            pass
-
-# ----------------- GUI Application -----------------
+# ---------------- GUI ----------------
 class BrowserApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Portable Forensic All-in-One")
         self.geometry("1200x700")
 
-        # Log area
+        # Browser selection
+        self.browser_vars = {}
+        frame_select = tk.Frame(self)
+        frame_select.pack(pady=6)
+        tk.Label(frame_select, text="Select browsers:").pack(side=tk.LEFT)
+        for b in BROWSERS.keys():
+            var = tk.BooleanVar(value=(b=="Chrome"))
+            cb = tk.Checkbutton(frame_select, text=b, variable=var)
+            cb.pack(side=tk.LEFT)
+            self.browser_vars[b] = var
+
+        # Log
         self.log_box = tk.Text(self, height=12)
         self.log_box.pack(fill=tk.BOTH, expand=False, padx=8, pady=6)
 
         # Buttons
-        frame = tk.Frame(self)
-        frame.pack(pady=6)
-        self.btn_normal = tk.Button(frame, text="Normal Browsing", command=self.run_normal)
+        frame_btn = tk.Frame(self)
+        frame_btn.pack(pady=6)
+        self.btn_normal = tk.Button(frame_btn, text="Normal Browsing", command=self.run_normal)
         self.btn_normal.pack(side=tk.LEFT, padx=6)
-        self.btn_security = tk.Button(frame, text="Security Investigation", command=self.run_security)
+        self.btn_security = tk.Button(frame_btn, text="Security Investigation", command=self.run_security)
         self.btn_security.pack(side=tk.LEFT, padx=6)
-        self.btn_alerts = tk.Button(frame, text="View Alerts", command=self.view_alerts)
+        self.btn_alerts = tk.Button(frame_btn, text="View Alerts", command=self.view_alerts)
         self.btn_alerts.pack(side=tk.LEFT, padx=6)
 
-        # Start the live monitor thread
-        self.monitor = LiveMonitor(gui_log=self.log)
+        # Start monitor
+        selected = [b for b,v in self.browser_vars.items() if v.get()]
+        self.monitor = LiveMonitor(gui_log=self.log, selected_browsers=selected)
         self.monitor.start()
 
     def log(self, msg):
@@ -298,45 +310,45 @@ class BrowserApp(tk.Tk):
         self.log_box.insert(tk.END, f"[{ts}] {msg}\n")
         self.log_box.see(tk.END)
 
-    # Normal browsing display
     def run_normal(self):
         threading.Thread(target=self._run_normal, daemon=True).start()
 
     def _run_normal(self):
         self.log("Extracting normal browsing history...")
-        df = extract_browser_history(log_callback=self.log)
-        self.display_table(df, title="Browsing History")
+        selected = [b for b,v in self.browser_vars.items() if v.get()]
+        df_list = [extract_browser_history(browser=b, log_callback=self.log) for b in selected]
+        df = pd.concat(df_list,ignore_index=True) if df_list else pd.DataFrame()
+        self.display_table(df, "Browsing History")
 
-    # Security investigation: correlate in-memory alerts with browser history
     def run_security(self):
         threading.Thread(target=self._run_security, daemon=True).start()
 
     def _run_security(self):
-        self.log("Running security investigation (using live alerts)...")
-        bd = extract_browser_history(log_callback=self.log)
+        self.log("Running security investigation...")
+        selected = [b for b,v in self.browser_vars.items() if v.get()]
+        df_list = [extract_browser_history(browser=b) for b in selected]
+        df = pd.concat(df_list,ignore_index=True) if df_list else pd.DataFrame()
         with alerts_lock:
             a_copy = alerts_df.copy()
-        timeline = correlate_with_alerts(bd, a_copy)
+        timeline = correlate_with_alerts(df,a_copy)
         if timeline.empty:
             self.log("No correlated suspicious activity found.")
-            messagebox.showinfo("Security Investigation", "No suspicious activity correlated with alerts.")
+            messagebox.showinfo("Security Investigation","No suspicious activity found")
         else:
             self.log(f"Found {len(timeline)} correlated events.")
-            self.display_table(timeline, title="Suspicious Correlated Events")
+            self.display_table(timeline,"Suspicious Correlated Events")
 
-    # View raw alerts table
     def view_alerts(self):
         with alerts_lock:
             a_copy = alerts_df.copy()
         if a_copy.empty:
-            messagebox.showinfo("Alerts", "No alerts generated yet.")
+            messagebox.showinfo("Alerts","No alerts generated yet.")
             return
-        self.display_table(a_copy, title="Live Alerts")
+        self.display_table(a_copy,"Live Alerts")
 
-    # Generic table display (Treeview)
     def display_table(self, df, title="Data"):
         if df.empty:
-            messagebox.showinfo(title, "No data to display.")
+            messagebox.showinfo(title,"No data to display.")
             return
         win = tk.Toplevel(self)
         win.title(title)
@@ -345,12 +357,10 @@ class BrowserApp(tk.Tk):
         tree = ttk.Treeview(win, columns=columns, show="headings")
         for col in columns:
             tree.heading(col, text=col)
-            tree.column(col, width=150, anchor='w')
-        # Insert rows
+            tree.column(col, width=120, anchor='w')
         for _, row in df.iterrows():
-            values = [row.get(c, "") for c in columns]
+            values = [row.get(c,"") for c in columns]
             iid = tree.insert("", tk.END, values=values)
-            # color tags for certain fields if present
             if 'guest_mode' in df.columns and row.get('guest_mode'):
                 tree.item(iid, tags=('guest',))
             if 'Deleted' in df.columns and row.get('Deleted'):
@@ -369,9 +379,8 @@ class BrowserApp(tk.Tk):
             pass
         self.destroy()
 
-# ----------------- Run App -----------------
+# ---------------- Run App ----------------
 if __name__ == "__main__":
-    # create global reference used by monitor popups
     app = BrowserApp()
     app.protocol("WM_DELETE_WINDOW", app.on_close)
     app.mainloop()
