@@ -1,3 +1,44 @@
+import os
+import sys
+import pickle
+
+# Safe file paths for exe
+if getattr(sys, 'frozen', False):
+    BASE_DIR = sys._MEIPASS
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+RF_MODEL_PATH = os.path.join(BASE_DIR, "rf_model.pkl")
+VEC_PATH = os.path.join(BASE_DIR, "tfidf_vectorizer.pkl")
+CSV_PATH = os.path.join(BASE_DIR, "browsing_history.csv")
+
+# Load ML model safely
+try:
+    with open(RF_MODEL_PATH, "rb") as f:
+        clf = pickle.load(f)
+    with open(VEC_PATH, "rb") as f:
+        vectorizer = pickle.load(f)
+except:
+    # fallback training if .pkl missing
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    TRAIN_URLS = ['https://www.khanacademy.org','https://www.harvard.edu','https://www.coursera.org',
+                  'https://www.facebook.com','https://www.instagram.com','https://twitter.com',
+                  'https://www.amazon.com','https://www.flipkart.com','https://www.ebay.com',
+                  'https://www.bbc.com/news','https://www.cnn.com','https://timesofindia.indiatimes.com']
+    TRAIN_LABELS = ['Education','Education','Education','Social Media','Social Media','Social Media',
+                    'E-commerce','E-commerce','E-commerce','News','News','News']
+    vectorizer = TfidfVectorizer(analyzer='char_wb', ngram_range=(3,5))
+    X_train = vectorizer.fit_transform(TRAIN_URLS)
+    clf = RandomForestClassifier(n_estimators=50, random_state=42)
+    clf.fit(X_train, TRAIN_LABELS)
+
+# Load CSV safely
+import pandas as pd
+if os.path.exists(CSV_PATH):
+    browsing_history = pd.read_csv(CSV_PATH)
+else:
+    browsing_history = pd.DataFrame()  # empty if missing
 # portable_forensic_allinone_safe_visitcount.py
 import os
 import shutil
