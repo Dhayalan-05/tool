@@ -1,255 +1,161 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ActivityMonitor Pro</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f4f6f8;
-            margin: 0;
-            padding: 0;
-            color: #333;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lab Activity Dashboard</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f9f9f9;
+      color: #222;
+      margin: 0;
+      padding: 20px;
+    }
 
-        .container {
-            max-width: 1200px;
-            margin: 20px auto;
-            padding: 20px;
-            background-color: #fff;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
+    h1 {
+      text-align: center;
+      margin-bottom: 10px;
+    }
 
-        header {
-            text-align: center;
-            margin-bottom: 20px;
-        }
+    .system-card {
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
 
-        header h1 {
-            font-size: 28px;
-            font-weight: 700;
-            margin: 0;
-            color: #1a1a1a;
-        }
+    .system-header {
+      background: #0078D7;
+      color: white;
+      padding: 10px 15px;
+      cursor: pointer;
+      border-radius: 8px 8px 0 0;
+    }
 
-        header p {
-            font-size: 14px;
-            color: #555;
-            margin-top: 5px;
-        }
+    .system-header:hover {
+      background: #005A9E;
+    }
 
-        .summary-card {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            background-color: #007BFF;
-            color: #fff;
-            padding: 15px 25px;
-            border-radius: 8px;
-            font-weight: bold;
-            margin-bottom: 20px;
-            width: 220px;
-            margin-left: auto;
-            margin-right: auto;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-        }
+    .system-content {
+      display: none;
+      padding: 10px;
+    }
 
-        .summary-card p {
-            font-size: 20px;
-            margin: 0;
-            margin-left: 10px;
-        }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+    }
 
-        .search-bar {
-            width: 100%;
-            padding: 10px;
-            font-size: 14px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            box-sizing: border-box;
-        }
+    table th, table td {
+      padding: 8px;
+      border: 1px solid #ddd;
+      text-align: left;
+      font-size: 13px;
+    }
 
-        #activityChart {
-            margin-bottom: 30px;
-        }
+    table th {
+      background: #f3f3f3;
+    }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            background-color: #fff;
-            border-radius: 5px;
-            overflow: hidden;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
-        }
+    .refresh {
+      text-align: right;
+      margin-bottom: 10px;
+    }
 
-        table th, table td {
-            padding: 12px 15px;
-            text-align: left;
-        }
+    button {
+      background: #0078D7;
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
 
-        table th {
-            background-color: #007BFF;
-            color: #fff;
-            font-weight: 600;
-        }
-
-        table tr:nth-child(even) {
-            background-color: #f9f9f9;
-        }
-
-        table tr:hover {
-            background-color: #e6f0ff;
-        }
-
-        @media (max-width: 768px) {
-            table, .container {
-                overflow-x: auto;
-            }
-        }
-    </style>
+    button:hover {
+      background: #005A9E;
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>ActivityMonitor Pro</h1>
-            <p>Monitor and manage user activities with real-time filtering and visual analytics.</p>
-        </header>
+  <h1>💻 Lab Activity Dashboard</h1>
+  <div class="refresh">
+    <button onclick="fetchData()">🔄 Refresh Data</button>
+  </div>
+  <div id="dashboard"></div>
 
-        <div class="summary-card">
-            Total Activities: <p id="totalActivities">Loading...</p>
-        </div>
+  <script>
+    async function fetchData() {
+      try {
+        const res = await fetch("http://127.0.0.1:8000/data");
+        const data = await res.json();
 
-        <canvas id="activityChart" height="150"></canvas>
-
-        <input type="text" id="searchInput" class="search-bar" placeholder="Search by Title or URL...">
-
-        <table id="activityTable">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Browser</th>
-                    <th>URL</th>
-                    <th>Title</th>
-                    <th>Timestamp</th>
-                    <th>System Name</th>
-                </tr>
-            </thead>
-            <tbody id="tableBody">
-                <tr>
-                    <td colspan="6">Loading data from server...</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-
-    <!-- Chart.js CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script>
-        const SERVER_API = "http://127.0.0.1:8000/data";
- // replace with your real server URL
-
-        let activityChart;
-        const chartData = {
-            labels: [],
-            datasets: [{
-                label: 'Total Activities',
-                backgroundColor: '#007BFF',
-                borderColor: '#0056b3',
-                data: [],
-                fill: true,
-                tension: 0.3
-            }]
-        };
-
-        function initChart() {
-            const ctx = document.getElementById('activityChart').getContext('2d');
-            activityChart = new Chart(ctx, {
-                type: 'line',
-                data: chartData,
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: { display: false },
-                        title: {
-                            display: true,
-                            text: 'Activities Over Time',
-                            font: { size: 16, weight: 'bold' }
-                        }
-                    },
-                    scales: {
-                        x: { title: { display: true, text: 'Time' } },
-                        y: { title: { display: true, text: 'Activities' }, beginAtZero: true }
-                    }
-                }
-            });
-        }
-
-        async function fetchAndDisplayData() {
-            try {
-                const response = await fetch(SERVER_API);
-                const data = await response.json();
-
-                const tableBody = document.getElementById('tableBody');
-                tableBody.innerHTML = '';
-
-                if (!data || data.length === 0) {
-                    tableBody.innerHTML = '<tr><td colspan="6">No data available</td></tr>';
-                    document.getElementById('totalActivities').textContent = 0;
-                    return;
-                }
-
-                // Update table
-                data.forEach((item, idx) => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>${idx + 1}</td>
-                        <td>${item.browser || 'N/A'}</td>
-                        <td>${item.url || 'N/A'}</td>
-                        <td>${item.title || 'N/A'}</td>
-                        <td>${item.timestamp || 'N/A'}</td>
-                        <td>${item.system_name || 'N/A'}</td>
-                    `;
-                    tableBody.appendChild(row);
-                });
-
-                document.getElementById('totalActivities').textContent = data.length;
-
-                // Update chart
-                const now = new Date().toLocaleTimeString();
-                chartData.labels.push(now);
-                chartData.datasets[0].data.push(data.length);
-                if (chartData.labels.length > 10) { // keep last 10 points
-                    chartData.labels.shift();
-                    chartData.datasets[0].data.shift();
-                }
-                activityChart.update();
-
-            } catch (error) {
-                console.error('Error fetching data:', error);
-                document.getElementById('tableBody').innerHTML = '<tr><td colspan="6">Error loading data from server.</td></tr>';
-                document.getElementById('totalActivities').textContent = 0;
-            }
-        }
-
-        document.getElementById('searchInput').addEventListener('input', function() {
-            const searchTerm = this.value.toLowerCase();
-            const rows = document.querySelectorAll('#activityTable tbody tr');
-
-            rows.forEach(row => {
-                const titleCell = row.querySelector('td:nth-child(4)')?.textContent.toLowerCase();
-                const urlCell = row.querySelector('td:nth-child(3)')?.textContent.toLowerCase();
-                row.style.display = (titleCell?.includes(searchTerm) || urlCell?.includes(searchTerm)) ? '' : 'none';
-            });
+        const systems = {};
+        data.forEach(item => {
+          const sys = item.system_name || "Unknown System";
+          if (!systems[sys]) systems[sys] = [];
+          systems[sys].push(item);
         });
 
-        window.onload = () => {
-            initChart();
-            fetchAndDisplayData();
-            setInterval(fetchAndDisplayData, 60000); // refresh every 60 seconds
-        };
-    </script>
+        const dashboard = document.getElementById("dashboard");
+        dashboard.innerHTML = "";
+
+        for (const [system, records] of Object.entries(systems)) {
+          const card = document.createElement("div");
+          card.className = "system-card";
+
+          const header = document.createElement("div");
+          header.className = "system-header";
+          header.textContent = `${system} (${records.length} activities)`;
+          header.onclick = () => {
+            const content = card.querySelector(".system-content");
+            content.style.display = content.style.display === "block" ? "none" : "block";
+          };
+
+          const content = document.createElement("div");
+          content.className = "system-content";
+
+          const table = document.createElement("table");
+          const thead = document.createElement("thead");
+          thead.innerHTML = `
+            <tr>
+              <th>Browser</th>
+              <th>Title</th>
+              <th>URL</th>
+              <th>Timestamp</th>
+            </tr>`;
+          table.appendChild(thead);
+
+          const tbody = document.createElement("tbody");
+          records.forEach(rec => {
+            const row = document.createElement("tr");
+            row.innerHTML = `
+              <td>${rec.browser}</td>
+              <td>${rec.title}</td>
+              <td>${rec.url}</td>
+              <td>${rec.timestamp}</td>`;
+            tbody.appendChild(row);
+          });
+          table.appendChild(tbody);
+
+          content.appendChild(table);
+          card.appendChild(header);
+          card.appendChild(content);
+          dashboard.appendChild(card);
+        }
+
+      } catch (err) {
+        console.error("Error:", err);
+        document.getElementById("dashboard").innerHTML =
+          "<p style='color:red;'>Failed to fetch data. Check if Flask server is running.</p>";
+      }
+    }
+
+    // Auto-refresh every 20 seconds
+    setInterval(fetchData, 20000);
+    window.onload = fetchData;
+  </script>
 </body>
 </html>
