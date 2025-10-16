@@ -6,7 +6,8 @@ import requests
 from datetime import datetime
 import sqlite3
 
-SERVER_URL = "http://127.0.0.1:8000/upload"  # your Flask server
+SERVER_URL = "http://10.1.7.84:8000/upload"
+ # your Flask server
 SYSTEM_NAME = socket.gethostname()  # system name like LAB-PC1
 
 DB_PATH = "browser_history.db"
