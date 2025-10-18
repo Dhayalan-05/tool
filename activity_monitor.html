@@ -1,161 +1,138 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lab Activity Dashboard</title>
-  <style>
-    body {
-      font-family: 'Segoe UI', sans-serif;
-      background-color: #f9f9f9;
-      color: #222;
-      margin: 0;
-      padding: 20px;
-    }
-
-    h1 {
-      text-align: center;
-      margin-bottom: 10px;
-    }
-
-    .system-card {
-      background: #fff;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      margin-bottom: 15px;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-    }
-
-    .system-header {
-      background: #0078D7;
-      color: white;
-      padding: 10px 15px;
-      cursor: pointer;
-      border-radius: 8px 8px 0 0;
-    }
-
-    .system-header:hover {
-      background: #005A9E;
-    }
-
-    .system-content {
-      display: none;
-      padding: 10px;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      background: #fff;
-    }
-
-    table th, table td {
-      padding: 8px;
-      border: 1px solid #ddd;
-      text-align: left;
-      font-size: 13px;
-    }
-
-    table th {
-      background: #f3f3f3;
-    }
-
-    .refresh {
-      text-align: right;
-      margin-bottom: 10px;
-    }
-
-    button {
-      background: #0078D7;
-      color: white;
-      border: none;
-      padding: 8px 14px;
-      border-radius: 5px;
-      cursor: pointer;
-    }
-
-    button:hover {
-      background: #005A9E;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ActivityMonitor Pro — Labs View</title>
+<style>
+body { font-family: "Segoe UI", sans-serif; background:#f4f6f8; margin:0; padding:20px; color:#222; }
+.wrap { max-width:1100px; margin:0 auto; }
+h1 { text-align:center; margin-bottom:6px; }
+p.lead { text-align:center; color:#666; margin-top:0; }
+.top { display:flex; gap:12px; margin:18px 0; }
+.left, .right { background:#fff; padding:12px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06); }
+.left { flex:0 0 320px; }
+.right { flex:1; min-height:380px; }
+.lab-item { padding:8px; border-bottom:1px solid #eee; cursor:pointer; }
+.lab-item:hover { background:#f0f8ff; }
+.system-list { margin-left:10px; margin-top:6px; }
+.system-item { padding:6px 8px; margin:4px 0; border-radius:6px; background:#fafafa; cursor:pointer; }
+.system-item:hover { background:#f0f8ff; }
+.controls { margin-bottom:12px; display:flex; gap:8px; align-items:center; }
+canvas { background:#fff; border-radius:8px; padding:10px; }
+.summary { margin-top:12px; color:#444; }
+.note { color:#777; font-size:13px; margin-top:8px; }
+</style>
 </head>
 <body>
-  <h1>💻 Lab Activity Dashboard</h1>
-  <div class="refresh">
-    <button onclick="fetchData()">🔄 Refresh Data</button>
+<div class="wrap">
+<h1>ActivityMonitor Pro — Labs View</h1>
+<p class="lead">Click a lab to expand systems. Click a system to view activity category composition (pie chart).</p>
+<div class="top">
+  <div class="left" id="leftPanel">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <strong>Labs & Systems</strong>
+      <button onclick="refreshAll()">Refresh</button>
+    </div>
+    <div id="labsContainer" style="margin-top:10px;"></div>
+    <div class="note">Auto-refreshes every 20s.</div>
   </div>
-  <div id="dashboard"></div>
+  <div class="right">
+    <div class="controls">
+      <div><strong id="selectedTitle">Select a system</strong></div>
+    </div>
+    <canvas id="pieChart" width="540" height="300"></canvas>
+    <div class="summary" id="summaryText"></div>
+  </div>
+</div>
+</div>
 
-  <script>
-    async function fetchData() {
-      try {
-        const res = await fetch("http://127.0.0.1:8000/data");
-        const data = await res.json();
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const API_BASE = "http://127.0.0.1:8000";  // change to admin IP
+const ENDPOINT_LABS = API_BASE + "/labs";
+const ENDPOINT_SYS_SUM = API_BASE + "/system_summary";
 
-        const systems = {};
-        data.forEach(item => {
-          const sys = item.system_name || "Unknown System";
-          if (!systems[sys]) systems[sys] = [];
-          systems[sys].push(item);
-        });
+let pieChart = null;
 
-        const dashboard = document.getElementById("dashboard");
-        dashboard.innerHTML = "";
+async function fetchJSON(url){
+  const res = await fetch(url);
+  if(!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+}
 
-        for (const [system, records] of Object.entries(systems)) {
-          const card = document.createElement("div");
-          card.className = "system-card";
+async function refreshAll(){
+  try {
+    const labs = await fetchJSON(ENDPOINT_LABS);
+    renderLabs(labs);
+  } catch(err){
+    document.getElementById("labsContainer").innerHTML = "<div style='color:red'>Failed to fetch labs.</div>";
+    console.error(err);
+  }
+}
 
-          const header = document.createElement("div");
-          header.className = "system-header";
-          header.textContent = `${system} (${records.length} activities)`;
-          header.onclick = () => {
-            const content = card.querySelector(".system-content");
-            content.style.display = content.style.display === "block" ? "none" : "block";
-          };
+function renderLabs(labs){
+  const container = document.getElementById("labsContainer");
+  container.innerHTML = "";
+  if(!labs || Object.keys(labs).length===0){
+    container.innerHTML = "<div>No labs connected.</div>";
+    return;
+  }
+  for(const [lab, systems] of Object.entries(labs)){
+    const labDiv = document.createElement("div");
+    labDiv.className = "lab-item";
+    labDiv.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;">
+                           <div><strong>${lab}</strong></div>
+                           <div style="font-size:13px;color:#555">${systems.length} systems</div>
+                        </div>`;
+    const sysList = document.createElement("div");
+    sysList.className = "system-list";
+    sysList.style.display = "none";
+    systems.forEach(sys=>{
+      const s = document.createElement("div");
+      s.className = "system-item";
+      s.textContent = sys;
+      s.onclick = (e)=>{ e.stopPropagation(); selectSystem(sys, lab); };
+      sysList.appendChild(s);
+    });
+    labDiv.onclick = ()=>{ sysList.style.display = (sysList.style.display==='block')?'none':'block'; };
+    container.appendChild(labDiv);
+    container.appendChild(sysList);
+  }
+}
 
-          const content = document.createElement("div");
-          content.className = "system-content";
+async function selectSystem(systemName, labName){
+  document.getElementById("selectedTitle").textContent = `System: ${systemName} (Lab: ${labName})`;
+  await updatePieForSystem(systemName);
+}
 
-          const table = document.createElement("table");
-          const thead = document.createElement("thead");
-          thead.innerHTML = `
-            <tr>
-              <th>Browser</th>
-              <th>Title</th>
-              <th>URL</th>
-              <th>Timestamp</th>
-            </tr>`;
-          table.appendChild(thead);
+async function updatePieForSystem(systemName){
+  try{
+    const data = await fetchJSON(ENDPOINT_SYS_SUM+"?system="+encodeURIComponent(systemName));
+    renderPieChart(data);
+    const total = Object.values(data).reduce((a,b)=>a+b,0);
+    document.getElementById("summaryText").textContent = `Total activities for ${systemName}: ${total}`;
+  } catch(err){
+    console.error(err);
+    document.getElementById("summaryText").textContent = "Failed to load summary.";
+  }
+}
 
-          const tbody = document.createElement("tbody");
-          records.forEach(rec => {
-            const row = document.createElement("tr");
-            row.innerHTML = `
-              <td>${rec.browser}</td>
-              <td>${rec.title}</td>
-              <td>${rec.url}</td>
-              <td>${rec.timestamp}</td>`;
-            tbody.appendChild(row);
-          });
-          table.appendChild(tbody);
+function renderPieChart(dataObj){
+  const labels = Object.keys(dataObj);
+  const values = Object.values(dataObj);
+  const colors = ["#4CAF50","#FF9800","#2196F3","#9C27B0","#F44336","#00BCD4","#FFC107","#8BC34A"];
+  const ctx = document.getElementById("pieChart").getContext("2d");
+  if(pieChart) pieChart.destroy();
+  pieChart = new Chart(ctx, {
+    type:'pie',
+    data:{ labels:labels, datasets:[{data:values, backgroundColor:colors.slice(0,labels.length)}] },
+    options:{ responsive:true, plugins:{ legend:{ position:'bottom' } } }
+  });
+}
 
-          content.appendChild(table);
-          card.appendChild(header);
-          card.appendChild(content);
-          dashboard.appendChild(card);
-        }
-
-      } catch (err) {
-        console.error("Error:", err);
-        document.getElementById("dashboard").innerHTML =
-          "<p style='color:red;'>Failed to fetch data. Check if Flask server is running.</p>";
-      }
-    }
-
-    // Auto-refresh every 20 seconds
-    setInterval(fetchData, 20000);
-    window.onload = fetchData;
-  </script>
+setInterval(refreshAll, 20000);
+window.onload = refreshAll;
+</script>
 </body>
 </html>

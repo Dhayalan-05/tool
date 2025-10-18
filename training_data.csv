@@ -1,0 +1,220 @@
+url,title,category
+facebook.com,Facebook,Social
+twitter.com,Twitter,Social
+instagram.com,Instagram,Social
+youtube.com,YouTube,Entertainment
+netflix.com,Netflix,Entertainment
+primevideo.com,Amazon Prime Video,Entertainment
+spotify.com,Spotify,Entertainment
+twitch.tv,Twitch,Entertainment
+vimeo.com,Vimeo,Entertainment
+hulu.com,Hulu,Entertainment
+wikipedia.org,Wikipedia,Educational
+khanacademy.org,Khan Academy,Educational
+coursera.org,Coursera,Educational
+edx.org,edX,Educational
+udemy.com,Udemy,Educational
+docs.python.org,Python Docs,Technical
+stackoverflow.com,StackOverflow,Technical
+github.com,Github,Technical
+gitlab.com,GitLab,Technical
+bitbucket.org,Bitbucket,Technical
+linkedin.com,LinkedIn,Work
+gmail.com,Gmail,Communication
+zoom.us,Zoom,Communication
+slack.com,Slack,Communication
+teams.microsoft.com,Microsoft Teams,Communication
+google.com,Google Search,Search
+bing.com,Bing Search,Search
+duckduckgo.com,DuckDuckGo,Search
+yahoo.com,Yahoo Search,Search
+reddit.com,Reddit,Social
+quora.com,Quora,Social
+medium.com,Medium,Work
+blog.google,Google Blog,Work
+cnn.com,CNN,News
+bbc.com,BBC News,News
+nytimes.com,New York Times,News
+theguardian.com,The Guardian,News
+espn.com,ESPN,Sports
+nba.com,NBA,Sports
+mlb.com,MLB,Sports
+adobe.com,Adobe Docs,Technical
+photoshop.com,Photoshop,Technical
+illustrator.com,Illustrator,Technical
+discord.com,Discord,Communication
+trello.com,Trello,Work
+asana.com,Asana,Work
+slate.com,Slate,News
+forbes.com,Forbes,News
+washingtonpost.com,Washington Post,News
+https://www.facebook.com,Facebook - Log In or Sign Up,Social
+https://www.youtube.com,YouTube,Entertainment
+https://www.instagram.com,Instagram,Social
+https://www.wikipedia.org,Wikipedia,Educational
+https://stackoverflow.com,Stack Overflow - Where Developers Learn,Technical
+https://github.com,GitHub - Code Hosting,Technical
+https://www.netflix.com,Netflix - Watch TV Shows Online,Entertainment
+https://www.coursera.org,Coursera Online Courses,Educational
+https://www.khanacademy.org,Khan Academy,Educational
+https://www.google.com/search?q=python,Google Search - Python,Search
+https://docs.python.org,Python Documentation,Technical
+https://www.linkedin.com,LinkedIn - Professional Network,Work
+https://mail.google.com,Gmail - Email by Google,Communication
+https://zoom.us,Zoom Video Communications,Communication
+https://www.reddit.com,Reddit - Dive into anything,Social
+https://www.twitch.tv,Twitch - Live Streaming,Entertainment
+https://www.medium.com,Medium - Where good ideas find you,Educational
+https://www.quora.com,Quora - Ask Questions,Educational
+https://www.stackexchange.com,Stack Exchange Network,Technical
+https://www.microsoft.com,Microsoft Official Site,Work
+https://www.apple.com,Apple Official Site,Work
+https://www.spotify.com,Spotify - Music for everyone,Entertainment
+https://www.imdb.com,IMDb - Movies,Entertainment
+https://www.hulu.com,Hulu - Streaming TV Shows,Entertainment
+https://www.wikipedia.org/wiki/Machine_learning,Machine Learning - Wikipedia,Educational
+https://www.codecademy.com,Codecademy - Learn to Code,Educational
+https://www.udemy.com,Udemy Online Courses,Educational
+https://www.edx.org,edX Online Courses,Educational
+https://www.google.com/maps,Google Maps,Technical
+https://www.dropbox.com,Dropbox - Cloud Storage,Work
+https://www.slack.com,Slack - Team Communication,Communication
+https://www.zoom.com,Zoom Meetings,Communication
+https://www.github.com/topics/python,GitHub Python Projects,Technical
+https://www.hackerrank.com,HackerRank - Coding Challenges,Technical
+https://www.medium.com/tag/python,Medium Python Articles,Educational
+https://www.youtube.com/watch?v=dQw4w9WgXcQ,Rick Astley - Never Gonna Give You Up,Entertainment
+https://www.ted.com,TED Talks,Educational
+https://www.wikipedia.org/wiki/Artificial_intelligence,Artificial Intelligence - Wikipedia,Educational
+https://www.stackoverflow.com/questions,Stack Overflow Python Questions,Technical
+https://www.linkedin.com/jobs,LinkedIn Jobs,Work
+https://www.github.com/trending,GitHub Trending Projects,Technical
+https://www.khanacademy.org/computing,Computer Science - Khan Academy,Educational
+https://www.reddit.com/r/technology,Reddit Technology Community,Technical
+https://www.reddit.com/r/movies,Reddit Movies Community,Entertainment
+https://www.twitch.tv/directory,Popular Twitch Channels,Entertainment
+https://www.spotify.com/us/premium,Spotify Premium,Entertainment
+https://www.edx.org/course/data-science,Data Science Course - edX,Educational
+https://www.coursera.org/learn/machine-learning,Machine Learning - Coursera,Educational
+https://www.udemy.com/course/python-complete,Python Complete Course - Udemy,Educational
+https://www.google.com/search?q=machine+learning,Google Search - Machine Learning,Search
+https://www.quora.com/topic/Machine-Learning,Quora Machine Learning,Educational
+https://www.gmail.com,Google Mail,Communication
+https://www.zoom.us/j/1234567890,Zoom Meeting,Communication
+https://www.slack.com/signin,Slack Workspace,Communication
+https://www.microsoft.com/en-us/microsoft-365,Microsoft 365,Work
+https://www.apple.com/mac,Apple Mac Products,Work
+https://www.netflix.com/browse,Netflix Home,Entertainment
+https://www.hulu.com/watch,Watch Hulu Shows,Entertainment
+https://www.imdb.com/title/tt0111161,The Shawshank Redemption - IMDb,Entertainment
+https://www.ted.com/talks,Popular TED Talks,Educational
+https://www.wikipedia.org/wiki/Data_science,Data Science Wikipedia,Educational
+https://www.medium.com/topic/technology,Technology Articles on Medium,Educational
+https://www.facebook.com,Facebook - Log In or Sign Up,Social
+https://www.youtube.com,YouTube,Entertainment
+https://www.instagram.com,Instagram,Social
+https://www.wikipedia.org,Wikipedia,Educational
+https://stackoverflow.com,Stack Overflow - Where Developers Learn,Technical
+https://github.com,GitHub - Code Hosting,Technical
+https://www.netflix.com,Netflix - Watch TV Shows Online,Entertainment
+https://www.coursera.org,Coursera Online Courses,Educational
+https://www.khanacademy.org,Khan Academy,Educational
+https://www.google.com/search?q=python,Google Search - Python,Search
+https://docs.python.org,Python Documentation,Technical
+https://www.linkedin.com,LinkedIn - Professional Network,Work
+https://mail.google.com,Gmail - Email by Google,Communication
+https://zoom.us,Zoom Video Communications,Communication
+https://www.reddit.com,Reddit - Dive into anything,Social
+https://www.twitch.tv,Twitch - Live Streaming,Entertainment
+https://www.medium.com,Medium - Where good ideas find you,Educational
+https://www.quora.com,Quora - Ask Questions,Educational
+https://www.stackexchange.com,Stack Exchange Network,Technical
+https://www.microsoft.com,Microsoft Official Site,Work
+https://www.apple.com,Apple Official Site,Work
+https://www.spotify.com,Spotify - Music for everyone,Entertainment
+https://www.imdb.com,IMDb - Movies,Entertainment
+https://www.hulu.com,Hulu - Streaming TV Shows,Entertainment
+https://www.wikipedia.org/wiki/Machine_learning,Machine Learning - Wikipedia,Educational
+https://www.codecademy.com,Codecademy - Learn to Code,Educational
+https://www.udemy.com,Udemy Online Courses,Educational
+https://www.edx.org,edX Online Courses,Educational
+https://www.google.com/maps,Google Maps,Technical
+https://www.dropbox.com,Dropbox - Cloud Storage,Work
+https://www.slack.com,Slack - Team Communication,Communication
+https://www.zoom.com,Zoom Meetings,Communication
+https://www.github.com/topics/python,GitHub Python Projects,Technical
+https://www.hackerrank.com,HackerRank - Coding Challenges,Technical
+https://www.medium.com/tag/python,Medium Python Articles,Educational
+https://www.youtube.com/watch?v=dQw4w9WgXcQ,Rick Astley - Never Gonna Give You Up,Entertainment
+https://www.ted.com,TED Talks,Educational
+https://www.wikipedia.org/wiki/Artificial_intelligence,Artificial Intelligence - Wikipedia,Educational
+https://www.stackoverflow.com/questions,Stack Overflow Python Questions,Technical
+https://www.linkedin.com/jobs,LinkedIn Jobs,Work
+https://www.github.com/trending,GitHub Trending Projects,Technical
+https://www.khanacademy.org/computing,Computer Science - Khan Academy,Educational
+https://www.reddit.com/r/technology,Reddit Technology Community,Technical
+https://www.reddit.com/r/movies,Reddit Movies Community,Entertainment
+https://www.twitch.tv/directory,Popular Twitch Channels,Entertainment
+https://www.spotify.com/us/premium,Spotify Premium,Entertainment
+https://www.edx.org/course/data-science,Data Science Course - edX,Educational
+https://www.coursera.org/learn/machine-learning,Machine Learning - Coursera,Educational
+https://www.udemy.com/course/python-complete,Python Complete Course - Udemy,Educational
+https://www.google.com/search?q=machine+learning,Google Search - Machine Learning,Search
+https://www.quora.com/topic/Machine-Learning,Quora Machine Learning,Educational
+https://www.gmail.com,Google Mail,Communication
+https://www.zoom.us/j/1234567890,Zoom Meeting,Communication
+https://www.slack.com/signin,Slack Workspace,Communication
+https://www.microsoft.com/en-us/microsoft-365,Microsoft 365,Work
+https://www.apple.com/mac,Apple Mac Products,Work
+https://www.netflix.com/browse,Netflix Home,Entertainment
+https://www.hulu.com/watch,Watch Hulu Shows,Entertainment
+https://www.imdb.com/title/tt0111161,The Shawshank Redemption - IMDb,Entertainment
+https://www.ted.com/talks,Popular TED Talks,Educational
+https://www.wikipedia.org/wiki/Data_science,Data Science Wikipedia,Educational
+https://www.medium.com/topic/technology,Technology Articles on Medium,Educational
+https://www.facebook.com/events,Facebook Events,Social
+https://www.instagram.com/explore,Instagram Explore,Social
+https://www.youtube.com/music,YouTube Music,Entertainment
+https://www.netflix.com/new,Netflix New Releases,Entertainment
+https://www.coursera.org/specializations,Coursera Specializations,Educational
+https://www.khanacademy.org/science,Science - Khan Academy,Educational
+https://www.google.com/search?q=javascript,Google Search - Javascript,Search
+https://docs.python.org/3/tutorial,Python Tutorial,Technical
+https://www.linkedin.com/learning,LinkedIn Learning,Work
+https://mail.google.com/mail/u/0/#inbox,Gmail Inbox,Communication
+https://zoom.us/signin,Zoom Sign In,Communication
+https://www.reddit.com/r/programming,Reddit Programming Community,Technical
+https://www.twitch.tv/popular,Popular Twitch Streams,Entertainment
+https://www.spotify.com/us/genres,Spotify Genres,Entertainment
+https://www.edx.org/professional-certificate,edX Professional Certificate,Educational
+https://www.udemy.com/topic/data-science,Udemy Data Science,Educational
+https://www.medium.com/tag/javascript,Medium JavaScript Articles,Educational
+https://www.github.com/trending/python,GitHub Trending Python,Technical
+https://www.stackoverflow.com/questions/tagged/python,Stack Overflow Python Tagged,Technical
+https://www.coursera.org/learn/data-science,Data Science - Coursera,Educational
+https://www.wikipedia.org/wiki/Deep_learning,Deep Learning Wikipedia,Educational
+https://www.linkedin.com/company,LinkedIn Company Pages,Work
+https://www.microsoft.com/en-us/software-download,Microsoft Downloads,Work
+https://www.apple.com/ios,Apple iOS Products,Work
+https://www.imdb.com/chart/top,IMDb Top Movies,Entertainment
+https://www.hulu.com/hub,Watch Hulu Hub,Entertainment
+https://www.ted.com/playlists,TED Playlists,Educational
+https://www.wikipedia.org/wiki/Natural_language_processing,NLP - Wikipedia,Educational
+https://www.github.com/explore,GitHub Explore Projects,Technical
+https://www.khanacademy.org/math,Math Courses - Khan Academy,Educational
+https://www.quora.com/q/machine-learning,Quora Machine Learning Q&A,Educational
+https://www.medium.com/tag/education,Medium Education Articles,Educational
+https://www.stackexchange.com/questions,Stack Exchange Questions,Technical
+https://www.reddit.com/r/science,Reddit Science Community,Educational
+https://www.twitch.tv/technology,Tech Twitch Channels,Technical
+https://www.spotify.com/us/discover,Spotify Discover,Entertainment
+https://www.edx.org/learn/python,edX Python Learning,Educational
+https://www.coursera.org/learn/python,Python Course - Coursera,Educational
+https://www.udemy.com/course/machine-learning,Udemy ML Course,Educational
+https://www.google.com/search?q=data+science,Google Search Data Science,Search
+https://www.gmail.com/inbox,Google Mail Inbox,Communication
+https://www.slack.com/messages,Slack Messages,Communication
+https://www.zoom.us/j/987654321,Zoom Meeting Room,Communication
+https://www.microsoft.com/en-us/microsoft-teams,Microsoft Teams,Work
+https://www.apple.com/watch,Apple Watch Products,Work
+
