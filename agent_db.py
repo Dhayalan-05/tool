@@ -12,16 +12,16 @@ import shutil
 from datetime import datetime
 
 # CONFIG
-SERVER_URL = "http://127.0.0.1:8000/upload"   # change to admin IP when deploying
-SLEEP_INTERVAL = 60      # seconds between extraction cycles
-LAB_NAME = os.getenv("LAB_NAME", "Lab-1")     # set LAB_NAME env var on different labs if needed
+SERVER_URL = "http://127.0.0.1:8000/upload"  # change to admin IP when deploying
+SLEEP_INTERVAL = 60  # seconds between extraction cycles
+LAB_NAME = os.getenv("LAB_NAME", "Lab-1")  # set LAB_NAME env var on different labs if needed
 SYSTEM_NAME = socket.gethostname()
 
 # ML model filenames
 VECT_FILE = "vectorizer.pkl"
 MODEL_FILE = "category_model.pkl"
 
-# Minimal sample training data (will be used only first run)
+# Minimal sample training data (used only if no trained model)
 SAMPLE_TEXTS = [
     "facebook.com", "youtube.com/watch?v=abc", "instagram.com/user",
     "wikipedia.org/wiki/Python", "stackoverflow.com/questions", "github.com/repo",
@@ -35,19 +35,16 @@ SAMPLE_LABELS = [
     "Search", "Technical", "Work", "Communication", "Communication"
 ]
 
-# Basic categories list (model will predict from these)
 CATEGORIES = list(set(SAMPLE_LABELS))
 
 # ---------- ML helpers ----------
 def train_or_load_model():
-    """Train a tiny TF-IDF + RandomForest model if not present, else load."""
     try:
         import joblib
         vectorizer = joblib.load(VECT_FILE)
         clf = joblib.load(MODEL_FILE)
         return vectorizer, clf
     except Exception:
-        # train
         from sklearn.feature_extraction.text import TfidfVectorizer
         from sklearn.ensemble import RandomForestClassifier
         vectorizer = TfidfVectorizer(ngram_range=(1,2))
@@ -75,17 +72,34 @@ def detect_browsers():
     local = os.getenv("LOCALAPPDATA", "")
     appdata = os.getenv("APPDATA", "")
 
-    # Chrome / Edge / Brave (History sqlite path)
-    paths = {
-        "Chrome": os.path.join(local, "Google\\Chrome\\User Data\\Default\\History"),
-        "Edge": os.path.join(local, "Microsoft\\Edge\\User Data\\Default\\History"),
-        "Brave": os.path.join(local, "BraveSoftware\\Brave-Browser\\User Data\\Default\\History")
-    }
-    for name, p in paths.items():
-        if p and os.path.exists(p):
-            browsers_found[name] = p
+    # Dynamic search in LocalAppData for Chrome, Edge, Brave
+    if local and os.path.exists(local):
+        for folder in os.listdir(local):
+            path = os.path.join(local, folder)
+            if os.path.isdir(path):
+                # Chrome
+                chrome_path = os.path.join(path, "Google\\Chrome\\User Data")
+                if os.path.exists(chrome_path):
+                    for profile in os.listdir(chrome_path):
+                        hist = os.path.join(chrome_path, profile, "History")
+                        if os.path.exists(hist):
+                            browsers_found[f"Chrome_{profile}"] = hist
+                # Edge
+                edge_path = os.path.join(path, "Microsoft\\Edge\\User Data")
+                if os.path.exists(edge_path):
+                    for profile in os.listdir(edge_path):
+                        hist = os.path.join(edge_path, profile, "History")
+                        if os.path.exists(hist):
+                            browsers_found[f"Edge_{profile}"] = hist
+                # Brave
+                brave_path = os.path.join(path, "BraveSoftware\\Brave-Browser\\User Data")
+                if os.path.exists(brave_path):
+                    for profile in os.listdir(brave_path):
+                        hist = os.path.join(brave_path, profile, "History")
+                        if os.path.exists(hist):
+                            browsers_found[f"Brave_{profile}"] = hist
 
-    # Firefox: multiple profiles -> places.sqlite
+    # Firefox
     firefox_root = os.path.join(appdata, "Mozilla\\Firefox\\Profiles")
     if firefox_root and os.path.exists(firefox_root):
         for profile in os.listdir(firefox_root):
@@ -97,19 +111,17 @@ def detect_browsers():
     return browsers_found
 
 def extract_history(db_path, browser_name):
-    """Copy DB to temp file, query recent URLs; return list of records."""
     temp = f"temp_{browser_name.replace(' ', '_')}.db"
     out = []
     try:
         shutil.copy2(db_path, temp)
         conn = sqlite3.connect(temp)
         cur = conn.cursor()
-        # Try Chrome/Edge style first
+        # Try Chrome/Edge/Brave style
         try:
             cur.execute("SELECT url, title, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 100")
             rows = cur.fetchall()
         except Exception:
-            # Try Firefox places schema
             try:
                 cur.execute("SELECT url, title, last_visit_date FROM moz_places ORDER BY last_visit_date DESC LIMIT 100")
                 rows = cur.fetchall()
@@ -120,7 +132,6 @@ def extract_history(db_path, browser_name):
         for r in rows:
             url = r[0] if r and len(r) > 0 else ""
             title = r[1] if r and len(r) > 1 else ""
-            # timestamp: we'll record current time for extraction clarity
             ts = datetime.utcnow().isoformat()
             category = classify_text(title + " " + url)
             out.append({
@@ -136,36 +147,54 @@ def extract_history(db_path, browser_name):
         print(f"[extract_history] {browser_name} error: {e}")
     return out
 
+# ---------- Buffer for offline storage ----------
+BUFFER_FILE = "unsent_buffer.json"
+import json
+
+def load_buffer():
+    if os.path.exists(BUFFER_FILE):
+        try:
+            with open(BUFFER_FILE, "r") as f:
+                return json.load(f)
+        except:
+            return []
+    return []
+
+def save_buffer(data):
+    with open(BUFFER_FILE, "w") as f:
+        json.dump(data, f)
+
 # ---------- Send to server ----------
 def send_to_server(records):
     if not records:
         return
+    all_records = load_buffer() + records
     try:
         headers = {"Content-Type":"application/json"}
-        res = requests.post(SERVER_URL, json=records, headers=headers, timeout=10)
+        res = requests.post(SERVER_URL, json=all_records, headers=headers, timeout=10)
         if res.status_code == 200:
-            print(f"[Agent] Sent {len(records)} records to server.")
+            print(f"[Agent] Sent {len(all_records)} records to server.")
+            if os.path.exists(BUFFER_FILE):
+                os.remove(BUFFER_FILE)
         else:
             print(f"[Agent] Server responded {res.status_code}: {res.text}")
+            save_buffer(all_records)
     except Exception as e:
         print(f"[Agent] Send failed: {e}")
+        save_buffer(all_records)
 
 # ---------- Main loop ----------
 def main():
     print("=== Agent started ===")
     while True:
         try:
-            # Optional: kill VPN processes / or other checks could be added here
             aggregated = []
             browsers = detect_browsers()
             for bname, path in browsers.items():
                 extracted = extract_history(path, bname)
                 if extracted:
                     aggregated.extend(extracted)
-            if aggregated:
-                send_to_server(aggregated)
-            else:
-                print("[Agent] No data extracted this interval.")
+            send_to_server(aggregated)
         except Exception as e:
             print("[Agent] Error in main loop:", e)
         time.sleep(SLEEP_INTERVAL)
