@@ -15,7 +15,7 @@ SLEEP_INTERVAL = 60
 LAB_NAME = os.getenv("LAB_NAME", "Lab-1")
 SYSTEM_NAME = socket.gethostname()
 
-ALLOWED_DOMAINS = ["collegeportal.edu"]  # domains not flagged
+ALLOWED_DOMAINS = ["110.172.151.102"]  # domains not flagged
 
 VECTOR_FILE = "vectorizer.pkl"
 MODEL_FILE = "category_model.pkl"
