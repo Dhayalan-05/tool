@@ -1,198 +1,144 @@
 <!doctype html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <title>ActivityMonitor Pro — Labs Dashboard</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>
-    body { font-family: "Segoe UI", Tahoma, sans-serif; background:#f4f6f8; margin:0; padding:20px; color:#222; }
-    .wrap { max-width:1100px; margin:0 auto; }
-    h1 { text-align:center; margin-bottom:6px; }
-    p.lead { text-align:center; color:#666; margin-top:0; }
-    .top { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin:18px 0; }
-    .left, .right { background:#fff; padding:12px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.06); }
-    .left { flex:0 0 320px; }
-    .right { flex:1; min-height:380px; }
-    .lab-item { padding:8px; border-bottom:1px solid #eee; cursor:pointer; display:flex; justify-content:space-between; align-items:center; }
-    .lab-item:hover { background:#f0f8ff; }
-    .flag { width:12px; height:12px; border-radius:50%; display:inline-block; margin-left:6px; }
-    .system-list { margin-left:10px; margin-top:6px; }
-    .system-item { padding:6px 8px; margin:4px 0; border-radius:6px; background:#fafafa; cursor:pointer; display:flex; justify-content:space-between; align-items:center; }
-    .system-item:hover { background:#f0f8ff; }
-    .controls { margin-bottom:12px; display:flex; gap:8px; align-items:center; }
-    canvas { background:#fff; border-radius:8px; padding:10px; }
-    .summary { margin-top:12px; color:#444; }
-    .note { color:#777; font-size:13px; margin-top:8px; }
-    button { padding:4px 8px; cursor:pointer; border:1px solid #aaa; background:#f5f5f5; border-radius:4px; }
-  </style>
+<meta charset="utf-8" />
+<title>ActivityMonitor Pro — Labs Dashboard</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+body{font-family:"Segoe UI",Tahoma,sans-serif;background:#f4f6f8;margin:0;padding:20px;color:#222;}
+.wrap{max-width:1100px;margin:0 auto;}
+h1{text-align:center;margin-bottom:6px;}
+p.lead{text-align:center;color:#666;margin-top:0;}
+.top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin:18px 0;}
+.left,.right{background:#fff;padding:12px;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.06);}
+.left{flex:0 0 320px;}
+.right{flex:1;min-height:380px;}
+.lab-item{padding:8px;border-bottom:1px solid #eee;cursor:pointer;display:flex;justify-content:space-between;align-items:center;}
+.lab-item:hover{background:#f0f8ff;}
+.flag{width:12px;height:12px;border-radius:50%;display:inline-block;margin-left:6px;}
+.system-list{margin-left:10px;margin-top:6px;}
+.system-item{padding:6px 8px;margin:4px 0;border-radius:6px;background:#fafafa;cursor:pointer;display:flex;justify-content:space-between;align-items:center;}
+.system-item:hover{background:#f0f8ff;}
+.controls{margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+canvas{background:#fff;border-radius:8px;padding:10px;}
+.summary{margin-top:12px;color:#444;}
+.note{color:#777;font-size:13px;margin-top:8px;}
+button{padding:4px 8px;cursor:pointer;border:1px solid #aaa;background:#f5f5f5;border-radius:4px;}
+select{padding:4px 6px;border-radius:4px;border:1px solid #aaa;}
+.raw-table{border-collapse:collapse;width:100%;font-size:13px;}
+.raw-table th, .raw-table td{border:1px solid #ccc;padding:4px 6px;}
+.raw-table th{background:#f0f0f0;}
+</style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>ActivityMonitor Pro — Labs Dashboard</h1>
-    <p class="lead">Click a lab to expand systems. Click a system to view activity category composition. Flags show restricted activity.</p>
+<div class="wrap">
+<h1>ActivityMonitor Pro — Labs Dashboard</h1>
+<p class="lead">Click a lab to expand systems. Click a system to view activity categories. Flags indicate restricted activity.</p>
 
-    <div class="top">
-      <div class="left" id="leftPanel">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <strong>Labs & Systems</strong>
-          <button onclick="refreshAll()">Refresh</button>
-        </div>
-        <div id="labsContainer" style="margin-top:10px;"></div>
-        <div class="note">Auto-refreshes every 20s.</div>
-      </div>
+<div class="top">
+<div class="left" id="leftPanel">
+<div style="display:flex;justify-content:space-between;align-items:center;">
+<strong>Labs & Systems</strong>
+<button onclick="refreshAll()">Refresh</button>
+</div>
+<div style="margin-top:10px;">
+<label>Date: <input type="date" id="dateSelect" onchange="refreshAll()"></label>
+</div>
+<div id="labsContainer" style="margin-top:10px;"></div>
+<div class="note">Auto-refreshes every 20s.</div>
+</div>
 
-      <div class="right">
-        <div class="controls">
-          <button onclick="toggleLivePast()"><span id="modeBtn">Live</span> Mode</button>
-          <div><strong id="selectedTitle">Select a system</strong></div>
-        </div>
-        <canvas id="pieChart" width="540" height="300"></canvas>
-        <div class="summary" id="summaryText"></div>
-        <div class="summary" id="rawDataText" style="margin-top:12px;"></div>
-      </div>
-    </div>
-  </div>
+<div class="right">
+<div class="controls">
+<button onclick="toggleLivePast()"><span id="modeBtn">Live</span> Mode</button>
+<button onclick="toggleRawData()">Raw Data</button>
+<div><strong id="selectedTitle">Select a system</strong></div>
+</div>
+<canvas id="pieChart" width="540" height="300"></canvas>
+<div class="summary" id="summaryText"></div>
+<div class="summary" id="rawDataText" style="margin-top:12px; display:none;"></div>
+</div>
+</div>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script>
-    const API_BASE = "http://127.0.0.1:8000"; // admin IP
-    const ENDPOINT_LABS = API_BASE + "/labs";
-    const ENDPOINT_LAB_SUM = API_BASE + "/lab_summary";
-    const ENDPOINT_SYS_SUM = API_BASE + "/system_summary";
-    const ENDPOINT_DATA = API_BASE + "/data";
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const API_BASE="http://127.0.0.1:8000";
+const ENDPOINT_LABS=API_BASE+"/labs";
+const ENDPOINT_SYS_SUM=API_BASE+"/system_summary";
+const ENDPOINT_DATA=API_BASE+"/data";
+const ENDPOINT_UNFLAG=API_BASE+"/unflag";
 
-    let pieChart = null;
-    let currentSelection = { type:null, name:null, lab:null };
-    let liveMode = true;
+let pieChart=null,currentSelection={type:null,name:null,lab:null},liveMode=true,rawVisible=false;
 
-    async function fetchJSON(url) {
-      const res = await fetch(url);
-      if(!res.ok) throw new Error("HTTP "+res.status);
-      return res.json();
-    }
+async function fetchJSON(url){const res=await fetch(url);if(!res.ok)throw new Error("HTTP "+res.status);return res.json();}
 
-    async function refreshAll() {
-      try {
-        const labs = await fetchJSON(ENDPOINT_LABS);
+async function refreshAll(){
+    const dateVal=document.getElementById("dateSelect").value||null;
+    try{
+        const labs=await fetchJSON(ENDPOINT_LABS+(dateVal?"?date="+dateVal:""));
         renderLabs(labs);
-      } catch(err) {
-        document.getElementById("labsContainer").innerHTML = "<div style='color:red'>Failed to fetch labs.</div>";
-        console.error(err);
-      }
-    }
+        if(currentSelection.type==="system"){updatePieForSystem(currentSelection.name,currentSelection.lab,dateVal);showRawData(currentSelection.name,dateVal);}
+    }catch(err){document.getElementById("labsContainer").innerHTML="<div style='color:red'>Failed to fetch labs.</div>";console.error(err);}
+}
 
-    function renderLabs(labs) {
-      const container = document.getElementById("labsContainer");
-      container.innerHTML = "";
-      if(!labs || Object.keys(labs).length===0){
-        container.innerHTML = "<div>No labs connected.</div>";
-        return;
-      }
-      const restrictedSites = ["chatgpt","gemini","perplexity"];
-      const allowedIPs = ["110.171.151.102"];
-
-      for(const [lab, systems] of Object.entries(labs)){
-        let labFlag = false;
-        const labDiv = document.createElement("div");
-        labDiv.className = "lab-item";
-        labDiv.innerHTML = `<div><strong>${lab}</strong></div><div id="flag_${lab}"></div>`;
-        
-        // System list
-        const sysList = document.createElement("div");
-        sysList.className = "system-list";
-        sysList.style.display="none";
-        systems.forEach(sys=>{
-          const s = document.createElement("div");
-          s.className="system-item";
-          s.textContent=sys;
-
-          s.onclick=()=>selectSystem(sys, lab);
-          sysList.appendChild(s);
+function renderLabs(labs){
+    const container=document.getElementById("labsContainer");
+    container.innerHTML="";
+    if(!labs||Object.keys(labs).length===0){container.innerHTML="<div>No labs connected.</div>";return;}
+    for(const [lab,systems] of Object.entries(labs)){
+        const labDiv=document.createElement("div");labDiv.className="lab-item";
+        let labFlag=false;
+        labDiv.innerHTML=`<div><strong>${lab}</strong></div><div id="flag_${lab}"></div>`;
+        const sysList=document.createElement("div");sysList.className="system-list";sysList.style.display="none";
+        systems.forEach(s=>{
+            const sdiv=document.createElement("div");sdiv.className="system-item";sdiv.textContent=s.system_name;
+            if(s.flagged){const f=document.createElement("span");f.className="flag";f.style.background="red";sdiv.appendChild(f);}
+            sdiv.onclick=()=>{currentSelection={type:"system",name:s.system_name,lab:lab};updatePieForSystem(s.system_name,lab,document.getElementById("dateSelect").value);showRawData(s.system_name,document.getElementById("dateSelect").value);};
+            sysList.appendChild(sdiv);
+            if(s.flagged)labFlag=true;
         });
-
-        // Flag check (fetch past data for this lab)
-        fetchJSON(ENDPOINT_LAB_SUM+"?lab="+encodeURIComponent(lab))
-        .then(data=>{
-          let flagSystems=[];
-          Object.entries(data).forEach(([cat,count])=>{
-            restrictedSites.forEach(site=>{
-              if(cat.toLowerCase().includes(site)) flagSystems.push(site);
-            });
-          });
-          // If any restricted activity
-          if(flagSystems.length>0){
-            labFlag=true;
-            const flagElem=document.createElement("span");
-            flagElem.className="flag";
-            flagElem.style.background="red";
-            labDiv.querySelector("#flag_"+lab).appendChild(flagElem);
-          }
-        }).catch(e=>console.log(e));
-
-        labDiv.onclick=()=>{ sysList.style.display=(sysList.style.display==="block")?"none":"block"; };
-        container.appendChild(labDiv);
-        container.appendChild(sysList);
-      }
+        labDiv.onclick=()=>{sysList.style.display=sysList.style.display==="none"?"block":"none";};
+        if(labFlag){const f=document.createElement("span");f.className="flag";f.style.background="red";labDiv.appendChild(f);}
+        container.appendChild(labDiv);container.appendChild(sysList);
     }
+}
 
-    async function selectSystem(systemName, labName){
-      currentSelection={type:"system", name:systemName, lab:labName};
-      document.getElementById("selectedTitle").textContent=`System: ${systemName} (Lab: ${labName})`;
-      await updatePieForSystem(systemName);
-      await showRawData(systemName);
-    }
+async function updatePieForSystem(system,lab,date){
+    try{
+        const data=await fetchJSON(`${ENDPOINT_SYS_SUM}?system=${system}${date?"&date="+date:""}`);
+        const ctx=document.getElementById("pieChart").getContext("2d");
+        if(pieChart)pieChart.destroy();
+        pieChart=new Chart(ctx,{type:'pie',data:{labels:Object.keys(data),datasets:[{data:Object.values(data),backgroundColor:['#4caf50','#2196f3','#ff9800','#f44336','#9c27b0','#607d8b']}]},options:{plugins:{legend:{position:'bottom'}}}});
+        document.getElementById("summaryText").textContent=`Category summary for ${system}`;
+    }catch(err){console.error(err);}
+}
 
-    async function updatePieForSystem(systemName){
-      try{
-        let endpoint = ENDPOINT_SYS_SUM+"?system="+encodeURIComponent(systemName);
-        const data = await fetchJSON(endpoint);
-        renderPieChart(data);
-        const total=Object.values(data).reduce((a,b)=>a+b,0);
-        document.getElementById("summaryText").textContent=`Total activities: ${total}`;
-      } catch(err){
-        console.error(err);
-        document.getElementById("summaryText").textContent="Failed to load summary.";
-      }
-    }
-
-    async function showRawData(systemName){
-      try{
-        const allData=await fetchJSON(ENDPOINT_DATA);
-        const filtered=allData.filter(r=>r.system_name===systemName);
-        let html="<strong>Recent Activities:</strong><br>";
-        filtered.slice(-20).forEach(r=>{
-          html+=`${r.timestamp} | ${r.browser} | ${r.title} | ${r.url} | ${r.category}<br>`;
+async function showRawData(system,date){
+    if(!rawVisible)return;
+    try{
+        const allData=await fetchJSON(`${ENDPOINT_DATA}${date?"?date="+date:""}`);
+        let filtered=allData.filter(r=>r.system_name===system);
+        let html="<table class='raw-table'><tr><th>ID</th><th>Time</th><th>Browser</th><th>Title</th><th>URL</th><th>Category</th><th>Flag</th><th>Action</th></tr>";
+        filtered.forEach(r=>{
+            html+=`<tr><td>${r.id}</td><td>${r.timestamp}</td><td>${r.browser}</td><td>${r.title}</td><td>${r.url}</td><td>${r.category}</td><td>${r.flagged?'<span style="color:red">Flagged</span>':'No'}</td>`;
+            html+=`<td>${r.flagged?`<button onclick='unflagRecord(${r.id})'>Unflag</button>`:""}</td></tr>`;
         });
+        html+="</table>";
         document.getElementById("rawDataText").innerHTML=html;
-      } catch(err){
-        document.getElementById("rawDataText").textContent="Failed to load raw data.";
-      }
-    }
+    }catch(err){console.error(err);}
+}
 
-    function renderPieChart(dataObj){
-      const labels=Object.keys(dataObj);
-      const values=Object.values(dataObj);
-      const colors=["#4CAF50","#FF9800","#2196F3","#9C27B0","#F44336","#00BCD4","#FFC107","#8BC34A"];
-      const ctx=document.getElementById("pieChart").getContext("2d");
-      if(pieChart) pieChart.destroy();
-      pieChart=new Chart(ctx,{
-        type:'pie',
-        data:{labels:labels,datasets:[{data:values,backgroundColor:colors.slice(0,labels.length)}]},
-        options:{responsive:true,plugins:{legend:{position:'bottom'}}}
-      });
-    }
+async function unflagRecord(id){
+    try{
+        const res=await fetch(ENDPOINT_UNFLAG,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})});
+        if(res.ok){alert("Record unflagged.");refreshAll();}
+    }catch(err){console.error(err);}
+}
 
-    function toggleLivePast(){
-      liveMode=!liveMode;
-      document.getElementById("modeBtn").textContent=liveMode?"Live":"Past";
-      if(currentSelection.type==="system"){
-        updatePieForSystem(currentSelection.name);
-        showRawData(currentSelection.name);
-      }
-    }
-
-    setInterval(refreshAll,20000);
-    window.onload=refreshAll;
-  </script>
+function toggleRawData(){rawVisible=!rawVisible;document.getElementById("rawDataText").style.display=rawVisible?"block":"none";if(currentSelection.type==="system")showRawData(currentSelection.name,document.getElementById("dateSelect").value);}
+function toggleLivePast(){liveMode=!liveMode;document.getElementById("modeBtn").textContent=liveMode?"Live":"Past";}
+function refreshLoop(){refreshAll();setTimeout(refreshLoop,20000);}
+refreshLoop();
+</script>
 </body>
 </html>
