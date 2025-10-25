@@ -10,7 +10,15 @@ import shutil
 from datetime import datetime
 import json
 
-SERVER_URL = "http://127.0.0.1:8000/upload"  # replace with admin server IP if needed
+# =========================================================
+# 🔧 MODIFY THIS SECTION FOR YOUR SERVER IP & PORT
+# =========================================================
+SERVER_IP = "192.168.200.21"     # your server's local IPv4 address
+SERVER_PORT = 8000               # same port that your server.py is running on
+SERVER_URL = "http://192.168.200.21:8000/upload"
+
+
+
 SLEEP_INTERVAL = 60
 LAB_NAME = os.getenv("LAB_NAME", "Lab-1")
 SYSTEM_NAME = socket.gethostname()
@@ -21,16 +29,16 @@ VECTOR_FILE = "vectorizer.pkl"
 MODEL_FILE = "category_model.pkl"
 
 SAMPLE_TEXTS = [
-    "facebook.com","youtube.com/watch?v=abc","instagram.com/user",
-    "wikipedia.org/wiki/Python","stackoverflow.com/questions","github.com/repo",
-    "netflix.com/title","coursera.org/course","khanacademy.org",
-    "google.com/search?q=python","docs.python.org","linkedin.com","gmail.com","zoom.us"
+    "facebook.com", "youtube.com/watch?v=abc", "instagram.com/user",
+    "wikipedia.org/wiki/Python", "stackoverflow.com/questions", "github.com/repo",
+    "netflix.com/title", "coursera.org/course", "khanacademy.org",
+    "google.com/search?q=python", "docs.python.org", "linkedin.com", "gmail.com", "zoom.us"
 ]
 SAMPLE_LABELS = [
-    "Social","Entertainment","Social",
-    "Educational","Technical","Technical",
-    "Entertainment","Educational","Educational",
-    "Search","Technical","Work","Communication","Communication"
+    "Social", "Entertainment", "Social",
+    "Educational", "Technical", "Technical",
+    "Entertainment", "Educational", "Educational",
+    "Search", "Technical", "Work", "Communication", "Communication"
 ]
 
 # ---------- ML helpers ----------
@@ -43,7 +51,7 @@ def train_or_load_model():
     except:
         from sklearn.feature_extraction.text import TfidfVectorizer
         from sklearn.ensemble import RandomForestClassifier
-        vectorizer = TfidfVectorizer(ngram_range=(1,2))
+        vectorizer = TfidfVectorizer(ngram_range=(1, 2))
         X = vectorizer.fit_transform(SAMPLE_TEXTS)
         clf = RandomForestClassifier(n_estimators=50, random_state=42)
         clf.fit(X, SAMPLE_LABELS)
@@ -101,6 +109,7 @@ def detect_browsers():
                 browsers_found[f"Firefox_{profile}"] = places
     return browsers_found
 
+
 def extract_history(db_path, browser_name):
     temp = f"temp_{browser_name.replace(' ', '_')}.db"
     out = []
@@ -116,7 +125,7 @@ def extract_history(db_path, browser_name):
                 cur.execute("SELECT url, title, last_visit_date FROM moz_places ORDER BY last_visit_date DESC LIMIT 100")
                 rows = cur.fetchall()
             except:
-                rows=[]
+                rows = []
         conn.close()
         os.remove(temp)
         for r in rows:
@@ -141,45 +150,50 @@ def extract_history(db_path, browser_name):
         print(f"[Agent] {browser_name} extraction error:", e)
     return out
 
+
 BUFFER_FILE = "unsent_buffer.json"
 
 def load_buffer():
     if os.path.exists(BUFFER_FILE):
         try:
-            with open(BUFFER_FILE,"r") as f:
+            with open(BUFFER_FILE, "r") as f:
                 return json.load(f)
         except:
             return []
     return []
 
 def save_buffer(data):
-    with open(BUFFER_FILE,"w") as f:
-        json.dump(data,f)
+    with open(BUFFER_FILE, "w") as f:
+        json.dump(data, f)
 
 def send_to_server(records):
     if not records:
         return
     all_records = load_buffer() + records
     try:
-        res = requests.post(SERVER_URL,json=all_records,timeout=10)
+        res = requests.post(SERVER_URL, json=all_records, timeout=10)
         if res.status_code == 200:
-            print(f"[Agent] Sent {len(all_records)} records to server.")
+            print(f"[Agent] ✅ Sent {len(all_records)} records to server.")
             if os.path.exists(BUFFER_FILE):
                 os.remove(BUFFER_FILE)
         else:
+            print(f"[Agent] ⚠️ Server responded with status {res.status_code}. Saving buffer.")
             save_buffer(all_records)
-    except:
+    except Exception as e:
+        print(f"[Agent] ⚠️ Could not send data to server: {e}")
         save_buffer(all_records)
+
 
 def main():
     print("=== Agent started ===")
+    print(f"→ Sending data to: {SERVER_URL}")
     while True:
-        aggregated=[]
+        aggregated = []
         browsers = detect_browsers()
         for bname, path in browsers.items():
-            aggregated.extend(extract_history(path,bname))
+            aggregated.extend(extract_history(path, bname))
         send_to_server(aggregated)
         time.sleep(SLEEP_INTERVAL)
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
