@@ -11,7 +11,8 @@ from datetime import datetime
 import json
 
 # --------- CONFIG ----------
-SERVER_URL = os.getenv("SERVER_URL", "http://106.195.36.90:8000/upload")
+SERVER_URL = "http://106.195.36.90:8000/upload"
+
 
 
 SLEEP_INTERVAL = 60
