@@ -62,7 +62,8 @@ select{padding:4px 6px;border-radius:4px;border:1px solid #aaa;}
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-const API_BASE="http://127.0.0.1:8000";
+const API_BASE="http://192.168.200.21:8000";
+
 const ENDPOINT_LABS=API_BASE+"/labs";
 const ENDPOINT_SYS_SUM=API_BASE+"/system_summary";
 const ENDPOINT_DATA=API_BASE+"/data";
@@ -70,15 +71,26 @@ const ENDPOINT_UNFLAG=API_BASE+"/unflag";
 
 let pieChart=null,currentSelection={type:null,name:null,lab:null},liveMode=true,rawVisible=false;
 
-async function fetchJSON(url){const res=await fetch(url);if(!res.ok)throw new Error("HTTP "+res.status);return res.json();}
+async function fetchJSON(url){
+    const auth = btoa(prompt("Enter admin username") + ":" + prompt("Enter admin password"));
+    const res = await fetch(url, {headers:{'Authorization':'Basic '+auth}});
+    if(!res.ok) throw new Error("HTTP "+res.status);
+    return res.json();
+}
 
 async function refreshAll(){
     const dateVal=document.getElementById("dateSelect").value||null;
     try{
         const labs=await fetchJSON(ENDPOINT_LABS+(dateVal?"?date="+dateVal:""));
         renderLabs(labs);
-        if(currentSelection.type==="system"){updatePieForSystem(currentSelection.name,currentSelection.lab,dateVal);showRawData(currentSelection.name,dateVal);}
-    }catch(err){document.getElementById("labsContainer").innerHTML="<div style='color:red'>Failed to fetch labs.</div>";console.error(err);}
+        if(currentSelection.type==="system"){
+            updatePieForSystem(currentSelection.name,currentSelection.lab,dateVal);
+            showRawData(currentSelection.name,dateVal);
+        }
+    }catch(err){
+        document.getElementById("labsContainer").innerHTML="<div style='color:red'>Failed to fetch labs.</div>";
+        console.error(err);
+    }
 }
 
 function renderLabs(labs){
@@ -130,7 +142,8 @@ async function showRawData(system,date){
 
 async function unflagRecord(id){
     try{
-        const res=await fetch(ENDPOINT_UNFLAG,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})});
+        const auth = btoa(prompt("Enter admin username") + ":" + prompt("Enter admin password"));
+        const res=await fetch(ENDPOINT_UNFLAG,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Basic '+auth},body:JSON.stringify({id:id})});
         if(res.ok){alert("Record unflagged.");refreshAll();}
     }catch(err){console.error(err);}
 }

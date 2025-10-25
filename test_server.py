@@ -1,18 +1,23 @@
 # test_server.py
 # Required packages: pip install flask flask-cors joblib scikit-learn
 
+import os
 import sqlite3
-from flask import Flask, request, jsonify, abort
+from flask import Flask, request, jsonify, abort, Response
 from flask_cors import CORS
 from collections import Counter
 from datetime import datetime
+from functools import wraps
+
+API_KEY = None  # optional auth, None means no login required
 
 DB_FILE = "agent_records.db"
 
 app = Flask(__name__)
 CORS(app)
 
-API_KEY = None  # optional auth
+ADMIN_USER = os.getenv("ADMIN_USER", "admin")
+ADMIN_PASS = os.getenv("ADMIN_PASS", "password")  # change for security
 
 # ---------- Database setup ----------
 def init_db():
@@ -35,6 +40,19 @@ def init_db():
     conn.close()
 
 init_db()
+
+# ---------- Basic Auth ----------
+def check_auth(username, password):
+    return username == ADMIN_USER and password == ADMIN_PASS
+
+def requires_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.authorization
+        if not auth or not check_auth(auth.username, auth.password):
+            return Response('Login required', 401, {'WWW-Authenticate':'Basic realm="Login Required"'})
+        return f(*args, **kwargs)
+    return decorated
 
 # ---------- Helpers ----------
 def insert_records(records):
@@ -91,13 +109,8 @@ def update_flag(record_id, flagged):
     conn.close()
 
 # ---------- API Endpoints ----------
-
 @app.route("/upload", methods=["POST"])
 def upload():
-    if API_KEY:
-        key = request.headers.get("X-API-KEY")
-        if key != API_KEY:
-            abort(401)
     data = request.get_json(force=True)
     if not data:
         return jsonify({"error":"no data"}), 400
@@ -111,6 +124,7 @@ def upload():
         return jsonify({"error":"bad format"}), 400
 
 @app.route("/labs", methods=["GET"])
+@requires_auth
 def get_labs():
     date = request.args.get("date")
     all_records = fetch_records(date)
@@ -127,6 +141,7 @@ def get_labs():
     return jsonify(output),200
 
 @app.route("/lab_summary", methods=["GET"])
+@requires_auth
 def lab_summary():
     lab = request.args.get("lab")
     date = request.args.get("date")
@@ -140,6 +155,7 @@ def lab_summary():
     return jsonify(dict(cnt)),200
 
 @app.route("/system_summary", methods=["GET"])
+@requires_auth
 def system_summary():
     system = request.args.get("system")
     date = request.args.get("date")
@@ -153,6 +169,7 @@ def system_summary():
     return jsonify(dict(cnt)),200
 
 @app.route("/data", methods=["GET"])
+@requires_auth
 def get_data():
     date = request.args.get("date")
     records = fetch_records(date)
@@ -171,20 +188,14 @@ def get_data():
     return jsonify(raw_data),200
 
 @app.route("/unflag", methods=["POST"])
+@requires_auth
 def unflag_entry():
-    if API_KEY:
-        key = request.headers.get("X-API-KEY")
-        if key != API_KEY:
-            abort(401)
     req = request.get_json(force=True)
     record_id = req.get("id")
     if record_id is None:
         return jsonify({"error":"missing id"}),400
-
     update_flag(record_id, 0)
     print(f"[Server] Record {record_id} unflagged. Retraining ML...")
-
-    # ---------- ML retraining ----------
     try:
         import joblib
         from sklearn.feature_extraction.text import TfidfVectorizer
@@ -206,8 +217,7 @@ def unflag_entry():
             print("[ML] Not enough unflagged records to retrain.")
     except Exception as e:
         print("[ML] Retrain failed:", e)
-
     return jsonify({"status":"ok","id":record_id}),200
 
-if __name__ == "__main__":
+if __name__=="__main__":
     app.run(host="0.0.0.0", port=8000)
