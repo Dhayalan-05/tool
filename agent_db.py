@@ -11,9 +11,9 @@ from datetime import datetime
 import json
 
 # --------- CONFIG ----------
-SERVER_URL = "http://106.195.36.90:8000/upload"
-
-
+SERVER_URL = "https://dhayalan.pythonanywhere.com/upload"
+AUTH_USER = "admin"                 # your Flask server username
+AUTH_PASS = "myStrongPassword123"   # your Flask server password
 
 SLEEP_INTERVAL = 60
 LAB_NAME = os.getenv("LAB_NAME", "Lab-1")
@@ -160,7 +160,7 @@ def send_to_server(records):
         return
     all_records = load_buffer() + records
     try:
-        res = requests.post(SERVER_URL,json=all_records,timeout=10)
+        res = requests.post(SERVER_URL, json=all_records, timeout=10, auth=(AUTH_USER, AUTH_PASS))
         if res.status_code == 200:
             print(f"[Agent] Sent {len(all_records)} records to server.")
             if os.path.exists(BUFFER_FILE):

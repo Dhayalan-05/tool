@@ -62,99 +62,118 @@ select{padding:4px 6px;border-radius:4px;border:1px solid #aaa;}
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-const API_BASE="http://106.195.36.90:8000";
+// ✅ Only change: API_BASE to PythonAnywhere server
+const API_BASE = "https://dhayalan.pythonanywhere.com"; 
 
- // replace with your server IP/URL
-const AUTH_USER="admin";      // replace with your server username
-const AUTH_PASS="password123"; // replace with your server password
+// Your server auth
+const AUTH_USER = "admin";
+const AUTH_PASS = "myStrongPassword123";
 
 function authHeaders(){
-    const token=btoa(AUTH_USER+":"+AUTH_PASS);
-    return { "Authorization": "Basic "+token };
+    const token = btoa(AUTH_USER + ":" + AUTH_PASS);
+    return { "Authorization": "Basic " + token };
 }
 
-const ENDPOINT_LABS=API_BASE+"/labs";
-const ENDPOINT_SYS_SUM=API_BASE+"/system_summary";
-const ENDPOINT_DATA=API_BASE+"/data";
-const ENDPOINT_UNFLAG=API_BASE+"/unflag";
+const ENDPOINT_LABS = API_BASE + "/labs";
+const ENDPOINT_SYS_SUM = API_BASE + "/system_summary";
+const ENDPOINT_DATA = API_BASE + "/data";
+const ENDPOINT_UNFLAG = API_BASE + "/unflag";
 
-let pieChart=null,currentSelection={type:null,name:null,lab:null},liveMode=true,rawVisible=false;
+let pieChart = null, currentSelection = {type:null,name:null,lab:null}, liveMode = true, rawVisible = false;
 
 async function fetchJSON(url){
-    const res=await fetch(url,{headers:authHeaders()});
-    if(!res.ok)throw new Error("HTTP "+res.status);
+    const res = await fetch(url, {headers: authHeaders()});
+    if(!res.ok) throw new Error("HTTP " + res.status);
     return res.json();
 }
 
 async function refreshAll(){
-    const dateVal=document.getElementById("dateSelect").value||null;
-    try{
-        const labs=await fetchJSON(ENDPOINT_LABS+(dateVal?"?date="+dateVal:""));
+    const dateVal = document.getElementById("dateSelect").value || null;
+    try {
+        const labs = await fetchJSON(ENDPOINT_LABS + (dateVal ? "?date=" + dateVal : ""));
         renderLabs(labs);
-        if(currentSelection.type==="system"){updatePieForSystem(currentSelection.name,currentSelection.lab,dateVal);showRawData(currentSelection.name,dateVal);}
-    }catch(err){
-        document.getElementById("labsContainer").innerHTML="<div style='color:red'>Failed to fetch labs.</div>";
+        if(currentSelection.type==="system"){
+            updatePieForSystem(currentSelection.name, currentSelection.lab, dateVal);
+            showRawData(currentSelection.name, dateVal);
+        }
+    } catch(err) {
+        document.getElementById("labsContainer").innerHTML = "<div style='color:red'>Failed to fetch labs.</div>";
         console.error(err);
     }
 }
 
 function renderLabs(labs){
-    const container=document.getElementById("labsContainer");
-    container.innerHTML="";
-    if(!labs||Object.keys(labs).length===0){container.innerHTML="<div>No labs connected.</div>";return;}
-    for(const [lab,systems] of Object.entries(labs)){
-        const labDiv=document.createElement("div");labDiv.className="lab-item";
-        let labFlag=false;
-        labDiv.innerHTML=`<div><strong>${lab}</strong></div><div id="flag_${lab}"></div>`;
-        const sysList=document.createElement("div");sysList.className="system-list";sysList.style.display="none";
-        systems.forEach(s=>{
-            const sdiv=document.createElement("div");sdiv.className="system-item";sdiv.textContent=s.system_name;
-            if(s.flagged){const f=document.createElement("span");f.className="flag";f.style.background="red";sdiv.appendChild(f);}
-            sdiv.onclick=()=>{currentSelection={type:"system",name:s.system_name,lab:lab};updatePieForSystem(s.system_name,lab,document.getElementById("dateSelect").value);showRawData(s.system_name,document.getElementById("dateSelect").value);};
+    const container = document.getElementById("labsContainer");
+    container.innerHTML = "";
+    if(!labs || Object.keys(labs).length === 0){ container.innerHTML="<div>No labs connected.</div>"; return; }
+    for(const [lab, systems] of Object.entries(labs)){
+        const labDiv = document.createElement("div"); labDiv.className = "lab-item";
+        let labFlag = false;
+        labDiv.innerHTML = `<div><strong>${lab}</strong></div><div id="flag_${lab}"></div>`;
+        const sysList = document.createElement("div"); sysList.className = "system-list"; sysList.style.display="none";
+        systems.forEach(s => {
+            const sdiv = document.createElement("div"); sdiv.className = "system-item"; sdiv.textContent = s.system_name;
+            if(s.flagged){const f = document.createElement("span"); f.className="flag"; f.style.background="red"; sdiv.appendChild(f);}
+            sdiv.onclick = () => {
+                currentSelection={type:"system",name:s.system_name,lab:lab};
+                updatePieForSystem(s.system_name, lab, document.getElementById("dateSelect").value);
+                showRawData(s.system_name, document.getElementById("dateSelect").value);
+            };
             sysList.appendChild(sdiv);
-            if(s.flagged)labFlag=true;
+            if(s.flagged) labFlag = true;
         });
-        labDiv.onclick=()=>{sysList.style.display=sysList.style.display==="none"?"block":"none";};
+        labDiv.onclick = ()=>{sysList.style.display = sysList.style.display==="none" ? "block" : "none";};
         if(labFlag){const f=document.createElement("span");f.className="flag";f.style.background="red";labDiv.appendChild(f);}
-        container.appendChild(labDiv);container.appendChild(sysList);
+        container.appendChild(labDiv); container.appendChild(sysList);
     }
 }
 
-async function updatePieForSystem(system,lab,date){
-    try{
-        const data=await fetchJSON(`${ENDPOINT_SYS_SUM}?system=${system}${date?"&date="+date:""}`);
-        const ctx=document.getElementById("pieChart").getContext("2d");
-        if(pieChart)pieChart.destroy();
-        pieChart=new Chart(ctx,{type:'pie',data:{labels:Object.keys(data),datasets:[{data:Object.values(data),backgroundColor:['#4caf50','#2196f3','#ff9800','#f44336','#9c27b0','#607d8b']}]},options:{plugins:{legend:{position:'bottom'}}}});
-        document.getElementById("summaryText").textContent=`Category summary for ${system}`;
-    }catch(err){console.error(err);}
+async function updatePieForSystem(system, lab, date){
+    try {
+        const data = await fetchJSON(`${ENDPOINT_SYS_SUM}?system=${system}${date ? "&date=" + date : ""}`);
+        const ctx = document.getElementById("pieChart").getContext("2d");
+        if(pieChart) pieChart.destroy();
+        pieChart = new Chart(ctx, {
+            type:'pie',
+            data:{
+                labels:Object.keys(data),
+                datasets:[{data:Object.values(data), backgroundColor:['#4caf50','#2196f3','#ff9800','#f44336','#9c27b0','#607d8b']}]
+            },
+            options:{plugins:{legend:{position:'bottom'}}}
+        });
+        document.getElementById("summaryText").textContent = `Category summary for ${system}`;
+    } catch(err){console.error(err);}
 }
 
-async function showRawData(system,date){
-    if(!rawVisible)return;
-    try{
-        const allData=await fetchJSON(`${ENDPOINT_DATA}${date?"?date="+date:""}`);
-        let filtered=allData.filter(r=>r.system_name===system);
-        let html="<table class='raw-table'><tr><th>ID</th><th>Time</th><th>Browser</th><th>Title</th><th>URL</th><th>Category</th><th>Flag</th><th>Action</th></tr>";
+async function showRawData(system, date){
+    if(!rawVisible) return;
+    try {
+        const allData = await fetchJSON(`${ENDPOINT_DATA}${date ? "?date=" + date : ""}`);
+        let filtered = allData.filter(r=>r.system_name===system);
+        let html = "<table class='raw-table'><tr><th>ID</th><th>Time</th><th>Browser</th><th>Title</th><th>URL</th><th>Category</th><th>Flag</th><th>Action</th></tr>";
         filtered.forEach(r=>{
-            html+=`<tr><td>${r.id}</td><td>${r.timestamp}</td><td>${r.browser}</td><td>${r.title}</td><td>${r.url}</td><td>${r.category}</td><td>${r.flagged?'<span style="color:red">Flagged</span>':'No'}</td>`;
-            html+=`<td>${r.flagged?`<button onclick='unflagRecord(${r.id})'>Unflag</button>`:""}</td></tr>`;
+            html += `<tr><td>${r.id}</td><td>${r.timestamp}</td><td>${r.browser}</td><td>${r.title}</td><td>${r.url}</td><td>${r.category}</td><td>${r.flagged ? '<span style="color:red">Flagged</span>' : 'No'}</td>`;
+            html += `<td>${r.flagged ? `<button onclick='unflagRecord(${r.id})'>Unflag</button>` : ""}</td></tr>`;
         });
-        html+="</table>";
-        document.getElementById("rawDataText").innerHTML=html;
-    }catch(err){console.error(err);}
+        html += "</table>";
+        document.getElementById("rawDataText").innerHTML = html;
+    } catch(err){console.error(err);}
 }
 
 async function unflagRecord(id){
     try{
-        const res=await fetch(ENDPOINT_UNFLAG,{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify({id:id})});
-        if(res.ok){alert("Record unflagged.");refreshAll();}
-    }catch(err){console.error(err);}
+        const res = await fetch(ENDPOINT_UNFLAG, {
+            method:'POST',
+            headers:{...authHeaders(), 'Content-Type':'application/json'},
+            body:JSON.stringify({id:id})
+        });
+        if(res.ok){ alert("Record unflagged."); refreshAll(); }
+    } catch(err){console.error(err);}
 }
 
-function toggleRawData(){rawVisible=!rawVisible;document.getElementById("rawDataText").style.display=rawVisible?"block":"none";if(currentSelection.type==="system")showRawData(currentSelection.name,document.getElementById("dateSelect").value);}
-function toggleLivePast(){liveMode=!liveMode;document.getElementById("modeBtn").textContent=liveMode?"Live":"Past";}
-function refreshLoop(){refreshAll();setTimeout(refreshLoop,20000);}
+function toggleRawData(){ rawVisible = !rawVisible; document.getElementById("rawDataText").style.display = rawVisible ? "block" : "none"; if(currentSelection.type==="system") showRawData(currentSelection.name, document.getElementById("dateSelect").value); }
+function toggleLivePast(){ liveMode=!liveMode; document.getElementById("modeBtn").textContent = liveMode ? "Live" : "Past"; }
+function refreshLoop(){ refreshAll(); setTimeout(refreshLoop,20000); }
 refreshLoop();
 </script>
 </body>

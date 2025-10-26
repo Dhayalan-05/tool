@@ -16,8 +16,8 @@ DB_FILE = "agent_records.db"
 app = Flask(__name__)
 CORS(app)
 
-ADMIN_USER = os.getenv("ADMIN_USER", "admin")
-ADMIN_PASS = os.getenv("ADMIN_PASS", "password")  # change for security
+ADMIN_USER = "admin"
+ADMIN_PASS = "myStrongPassword123"  # change for security
 
 # ---------- Database setup ----------
 def init_db():
