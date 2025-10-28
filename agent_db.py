@@ -11,86 +11,38 @@ from datetime import datetime
 import json
 
 # --------- CONFIG ----------
-SERVER_URL = "https://dhayalan.pythonanywhere.com/upload"
-AUTH_USER = "admin"                 # your Flask server username
-AUTH_PASS = "myStrongPassword123"   # your Flask server password
+SERVER_URL = "https://Dhayalan.pythonanywhere.com/upload"
+AUTH_USER = "admin"
+AUTH_PASS = "myStrongPassword123"
 
 SLEEP_INTERVAL = 60
 LAB_NAME = os.getenv("LAB_NAME", "Lab-1")
 SYSTEM_NAME = socket.gethostname()
-ALLOWED_DOMAINS = ["110.172.151.102"]  # domains not flagged
+ALLOWED_DOMAINS = ["110.172.151.102"]
 
 VECTOR_FILE = "vectorizer.pkl"
 MODEL_FILE = "category_model.pkl"
 
 SAMPLE_TEXTS = [
-    "facebook.com", 
-    "youtube.com/watch?v=abc123", 
-    "instagram.com/user/profile",
-    "stackoverflow.com/questions/12345", 
-    "github.com/openai/gpt", 
-    "netflix.com/title/6789",
-    "google.com/search?q=machine+learning", 
-    "docs.python.org/3/tutorial/",
-    "linkedin.com/in/developer",
-    "gmail.com/mail/u/0",
-    "zoom.us/j/123456789",
-    "twitter.com/home",
-    "reddit.com/r/technology/",
-    "spotify.com/playlist/abcd",
-    "coursera.org/learn/python",
-    "medium.com/@techstories",
-    "hulu.com/watch/series",
-    "dropbox.com/s/files",
-    "slack.com/workspace",
-    "bbc.com/news/world",
-    "pinterest.com/ideas/",
-    "amazon.in/product/B09XYZ",
-    "office.com/login",
-    "telegram.me/channel",
-    "twitch.tv/livegame",
-    "openai.com/research",
-    "disneyplus.com/movies/",
-    "flipkart.com/viewcart",
-    "nytimes.com/section/technology",
-    "quora.com/topic/AI"
+    "facebook.com","youtube.com/watch?v=abc123","instagram.com/user/profile",
+    "stackoverflow.com/questions/12345","github.com/openai/gpt","netflix.com/title/6789",
+    "google.com/search?q=machine+learning","docs.python.org/3/tutorial/","linkedin.com/in/developer",
+    "gmail.com/mail/u/0","zoom.us/j/123456789","twitter.com/home","reddit.com/r/technology/",
+    "spotify.com/playlist/abcd","coursera.org/learn/python","medium.com/@techstories",
+    "hulu.com/watch/series","dropbox.com/s/files","slack.com/workspace","bbc.com/news/world",
+    "pinterest.com/ideas/","amazon.in/product/B09XYZ","office.com/login","telegram.me/channel",
+    "twitch.tv/livegame","openai.com/research","disneyplus.com/movies/","flipkart.com/viewcart",
+    "nytimes.com/section/technology","quora.com/topic/AI"
 ]
 
 SAMPLE_LABELS = [
-    "Social",            # facebook.com
-    "Entertainment",     # youtube
-    "Social",            # instagram
-    "Technical",         # stackoverflow
-    "Technical",         # github
-    "Entertainment",     # netflix
-    "Search",            # google
-    "Technical",         # python docs
-    "Work",              # linkedin
-    "Communication",     # gmail
-    "Communication",     # zoom
-    "Social",            # twitter
-    "Social",            # reddit
-    "Entertainment",     # spotify
-    "Education",         # coursera
-    "Blog",              # medium
-    "Entertainment",     # hulu
-    "Work",              # dropbox
-    "Work",              # slack
-    "News",              # bbc
-    "Social",            # pinterest
-    "E-commerce",        # amazon
-    "Work",              # office
-    "Communication",     # telegram
-    "Entertainment",     # twitch
-    "Technical",         # openai
-    "Entertainment",     # disney+
-    "E-commerce",        # flipkart
-    "News",              # nytimes
-    "Knowledge"          # quora
+    "Social","Entertainment","Social","Technical","Technical","Entertainment","Search",
+    "Technical","Work","Communication","Communication","Social","Social","Entertainment",
+    "Education","Blog","Entertainment","Work","Work","News","Social","E-commerce","Work",
+    "Communication","Entertainment","Technical","Entertainment","E-commerce","News","Knowledge"
 ]
 
-
-# ---------- ML helpers ----------
+# ---------- ML ----------
 def train_or_load_model():
     import joblib
     try:
@@ -117,12 +69,11 @@ def classify_text(text):
     except:
         return "Other"
 
-# ---------- Browser detection ----------
+# ---------- Browser ----------
 def detect_browsers():
     browsers_found = {}
     local = os.getenv("LOCALAPPDATA", "")
     appdata = os.getenv("APPDATA", "")
-
     if local:
         for folder in os.listdir(local):
             path = os.path.join(local, folder)
@@ -145,7 +96,6 @@ def detect_browsers():
                         hist = os.path.join(brave_path, "History")
                         if os.path.exists(hist):
                             browsers_found[f"Brave_{profile}"] = hist
-
     firefox_root = os.path.join(appdata, "Mozilla\\Firefox\\Profiles")
     if firefox_root and os.path.exists(firefox_root):
         for profile in os.listdir(firefox_root):
@@ -173,8 +123,8 @@ def extract_history(db_path, browser_name):
         conn.close()
         os.remove(temp)
         for r in rows:
-            url = r[0] if r and len(r) > 0 else ""
-            title = r[1] if r and len(r) > 1 else ""
+            url = r[0] if r and len(r)>0 else ""
+            title = r[1] if r and len(r)>1 else ""
             ts = datetime.utcnow().isoformat()
             category = classify_text(title + " " + url)
             flagged = 0

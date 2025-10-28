@@ -9,15 +9,13 @@ from collections import Counter
 from datetime import datetime
 from functools import wraps
 
-API_KEY = None  # optional auth, None means no login required
-
 DB_FILE = "agent_records.db"
 
 app = Flask(__name__)
 CORS(app)
 
 ADMIN_USER = "admin"
-ADMIN_PASS = "myStrongPassword123"  # change for security
+ADMIN_PASS = "myStrongPassword123"
 
 # ---------- Database setup ----------
 def init_db():

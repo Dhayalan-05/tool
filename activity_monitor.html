@@ -5,67 +5,105 @@
 <title>ActivityMonitor Pro — Labs Dashboard</title>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
-body{font-family:"Segoe UI",Tahoma,sans-serif;background:#f4f6f8;margin:0;padding:20px;color:#222;}
-.wrap{max-width:1100px;margin:0 auto;}
-h1{text-align:center;margin-bottom:6px;}
-p.lead{text-align:center;color:#666;margin-top:0;}
-.top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin:18px 0;}
-.left,.right{background:#fff;padding:12px;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.06);}
-.left{flex:0 0 320px;}
-.right{flex:1;min-height:380px;}
-.lab-item{padding:8px;border-bottom:1px solid #eee;cursor:pointer;display:flex;justify-content:space-between;align-items:center;}
-.lab-item:hover{background:#f0f8ff;}
-.flag{width:12px;height:12px;border-radius:50%;display:inline-block;margin-left:6px;}
-.system-list{margin-left:10px;margin-top:6px;}
-.system-item{padding:6px 8px;margin:4px 0;border-radius:6px;background:#fafafa;cursor:pointer;display:flex;justify-content:space-between;align-items:center;}
-.system-item:hover{background:#f0f8ff;}
-.controls{margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
-canvas{background:#fff;border-radius:8px;padding:10px;}
-.summary{margin-top:12px;color:#444;}
-.note{color:#777;font-size:13px;margin-top:8px;}
-button{padding:4px 8px;cursor:pointer;border:1px solid #aaa;background:#f5f5f5;border-radius:4px;}
-select{padding:4px 6px;border-radius:4px;border:1px solid #aaa;}
-.raw-table{border-collapse:collapse;width:100%;font-size:13px;}
-.raw-table th, .raw-table td{border:1px solid #ccc;padding:4px 6px;}
-.raw-table th{background:#f0f0f0;}
+  /* Reset / base */
+  *,*::before,*::after{box-sizing:border-box}
+  html,body{height:100%;margin:0;padding:0;-webkit-text-size-adjust:100%;font-family:"Segoe UI",Tahoma,sans-serif;background:#f4f6f8;color:#222}
+  .wrap{max-width:1100px;margin:0 auto;padding:20px;}
+  h1{text-align:center;margin-bottom:6px;font-size:20px}
+  p.lead{text-align:center;color:#666;margin-top:0;margin-bottom:12px;font-size:13px}
+
+  /* Top layout */
+  .top{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start;margin:18px 0}
+  .left,.right{background:#fff;padding:12px;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.06)}
+  .left{flex:0 0 320px;min-width:240px;max-height:calc(100vh - 160px);overflow:auto}
+  .right{flex:1;min-height:380px;display:flex;flex-direction:column;gap:12px;overflow:hidden}
+
+  /* Left panel */
+  .lab-item{padding:8px;border-bottom:1px solid #eee;cursor:pointer;display:flex;justify-content:space-between;align-items:center;}
+  .lab-item:hover{background:#f0f8ff}
+  .flag{width:12px;height:12px;border-radius:50%;display:inline-block;margin-left:6px}
+  .system-list{margin-left:10px;margin-top:6px;}
+  .system-item{padding:6px 8px;margin:4px 0;border-radius:6px;background:#fafafa;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+  .system-item:hover{background:#f0f8ff}
+
+  /* Controls & chart area */
+  .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  button{padding:6px 10px;cursor:pointer;border:1px solid #aaa;background:#f5f5f5;border-radius:4px;font-size:13px}
+  select{padding:6px 8px;border-radius:4px;border:1px solid #aaa}
+
+  /* Canvas responsive */
+  .chart-wrap{background:#fff;border-radius:8px;padding:10px;display:flex;justify-content:center;align-items:center}
+  canvas{width:100% !important;height:300px !important;max-width:100%;display:block}
+
+  /* Summary & raw data */
+  .summary{color:#444;font-size:14px}
+  .note{color:#777;font-size:13px;margin-top:8px}
+
+  /* Raw table & scroll wrapper */
+  .raw-data-wrapper{overflow:auto;max-height:360px;border-radius:8px;background:#fff;padding:10px;border:1px solid #eee}
+  .raw-table{border-collapse:collapse;width:100%;font-size:13px;table-layout:fixed;word-wrap:break-word}
+  .raw-table th, .raw-table td{border:1px solid #ccc;padding:6px 8px;vertical-align:top}
+  .raw-table th{background:#f0f0f0}
+  .raw-table td{max-width:260px} /* prevent cells from expanding page width */
+
+  /* Small screens */
+  @media (max-width:900px){
+    .left{flex-basis:100%;max-height:220px}
+    .right{flex-basis:100%}
+    canvas{height:220px !important}
+    .raw-data-wrapper{max-height:260px}
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
-<h1>ActivityMonitor Pro — Labs Dashboard</h1>
-<p class="lead">Click a lab to expand systems. Click a system to view activity categories. Flags indicate restricted activity.</p>
+  <h1>ActivityMonitor Pro — Labs Dashboard</h1>
+  <p class="lead">Click a lab to expand systems. Click a system to view activity categories. Flags indicate restricted activity.</p>
 
-<div class="top">
-<div class="left" id="leftPanel">
-<div style="display:flex;justify-content:space-between;align-items:center;">
-<strong>Labs & Systems</strong>
-<button onclick="refreshAll()">Refresh</button>
-</div>
-<div style="margin-top:10px;">
-<label>Date: <input type="date" id="dateSelect" onchange="refreshAll()"></label>
-</div>
-<div id="labsContainer" style="margin-top:10px;"></div>
-<div class="note">Auto-refreshes every 20s.</div>
-</div>
+  <div class="top">
+    <div class="left" id="leftPanel">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <strong>Labs & Systems</strong>
+        <button onclick="refreshAll()">Refresh</button>
+      </div>
 
-<div class="right">
-<div class="controls">
-<button onclick="toggleLivePast()"><span id="modeBtn">Live</span> Mode</button>
-<button onclick="toggleRawData()">Raw Data</button>
-<div><strong id="selectedTitle">Select a system</strong></div>
-</div>
-<canvas id="pieChart" width="540" height="300"></canvas>
-<div class="summary" id="summaryText"></div>
-<div class="summary" id="rawDataText" style="margin-top:12px; display:none;"></div>
-</div>
+      <div style="margin-top:10px;">
+        <label>Date: <input type="date" id="dateSelect" onchange="refreshAll()"></label>
+      </div>
+
+      <div id="labsContainer" style="margin-top:10px;"></div>
+      <div class="note">Auto-refreshes every 20s.</div>
+    </div>
+
+    <div class="right">
+      <div class="controls" style="justify-content:space-between">
+        <div style="display:flex;gap:8px;align-items:center">
+          <button onclick="toggleLivePast()"><span id="modeBtn">Live</span> Mode</button>
+          <button onclick="toggleRawData()">Raw Data</button>
+        </div>
+        <div><strong id="selectedTitle">Select a system</strong></div>
+      </div>
+
+      <div class="chart-wrap" aria-hidden="false">
+        <canvas id="pieChart" width="540" height="300" role="img" aria-label="Category pie chart"></canvas>
+      </div>
+
+      <div class="summary" id="summaryText">No system selected.</div>
+
+      <!-- raw data area wrapped in scrollable container -->
+      <div id="rawDataContainer" style="display:none;">
+        <div class="raw-data-wrapper">
+          <div id="rawDataText"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-// ✅ Only change: API_BASE to PythonAnywhere server
+// unchanged API settings (only ensure URL matches your server)
 const API_BASE = "https://dhayalan.pythonanywhere.com"; 
-
-// Your server auth
 const AUTH_USER = "admin";
 const AUTH_PASS = "myStrongPassword123";
 
@@ -114,7 +152,8 @@ function renderLabs(labs){
         systems.forEach(s => {
             const sdiv = document.createElement("div"); sdiv.className = "system-item"; sdiv.textContent = s.system_name;
             if(s.flagged){const f = document.createElement("span"); f.className="flag"; f.style.background="red"; sdiv.appendChild(f);}
-            sdiv.onclick = () => {
+            sdiv.onclick = (ev) => {
+                ev.stopPropagation();
                 currentSelection={type:"system",name:s.system_name,lab:lab};
                 updatePieForSystem(s.system_name, lab, document.getElementById("dateSelect").value);
                 showRawData(s.system_name, document.getElementById("dateSelect").value);
@@ -122,7 +161,7 @@ function renderLabs(labs){
             sysList.appendChild(sdiv);
             if(s.flagged) labFlag = true;
         });
-        labDiv.onclick = ()=>{sysList.style.display = sysList.style.display==="none" ? "block" : "none";};
+        labDiv.onclick = ()=>{ sysList.style.display = sysList.style.display==="none" ? "block" : "none"; };
         if(labFlag){const f=document.createElement("span");f.className="flag";f.style.background="red";labDiv.appendChild(f);}
         container.appendChild(labDiv); container.appendChild(sysList);
     }
@@ -130,7 +169,7 @@ function renderLabs(labs){
 
 async function updatePieForSystem(system, lab, date){
     try {
-        const data = await fetchJSON(`${ENDPOINT_SYS_SUM}?system=${system}${date ? "&date=" + date : ""}`);
+        const data = await fetchJSON(`${ENDPOINT_SYS_SUM}?system=${encodeURIComponent(system)}${date ? "&date=" + date : ""}`);
         const ctx = document.getElementById("pieChart").getContext("2d");
         if(pieChart) pieChart.destroy();
         pieChart = new Chart(ctx, {
@@ -142,21 +181,29 @@ async function updatePieForSystem(system, lab, date){
             options:{plugins:{legend:{position:'bottom'}}}
         });
         document.getElementById("summaryText").textContent = `Category summary for ${system}`;
+        document.getElementById("selectedTitle").textContent = system;
     } catch(err){console.error(err);}
 }
 
 async function showRawData(system, date){
+    // toggle visibility of container
+    document.getElementById("rawDataContainer").style.display = rawVisible ? "block" : "none";
     if(!rawVisible) return;
     try {
         const allData = await fetchJSON(`${ENDPOINT_DATA}${date ? "?date=" + date : ""}`);
         let filtered = allData.filter(r=>r.system_name===system);
         let html = "<table class='raw-table'><tr><th>ID</th><th>Time</th><th>Browser</th><th>Title</th><th>URL</th><th>Category</th><th>Flag</th><th>Action</th></tr>";
         filtered.forEach(r=>{
-            html += `<tr><td>${r.id}</td><td>${r.timestamp}</td><td>${r.browser}</td><td>${r.title}</td><td>${r.url}</td><td>${r.category}</td><td>${r.flagged ? '<span style="color:red">Flagged</span>' : 'No'}</td>`;
-            html += `<td>${r.flagged ? `<button onclick='unflagRecord(${r.id})'>Unflag</button>` : ""}</td></tr>`;
+            const safeTitle = (r.title||"").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+            const safeUrl = (r.url||"").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+            html += `<tr><td style="width:60px;">${r.id}</td><td style="width:140px;">${r.timestamp}</td><td style="width:100px;">${r.browser}</td><td>${safeTitle}</td><td>${safeUrl}</td><td style="width:100px;">${r.category}</td><td style="width:80px;">${r.flagged ? '<span style="color:red">Flagged</span>' : 'No'}</td>`;
+            html += `<td style="width:80px;">${r.flagged ? `<button onclick='unflagRecord(${r.id})'>Unflag</button>` : ""}</td></tr>`;
         });
         html += "</table>";
         document.getElementById("rawDataText").innerHTML = html;
+        // Ensure the raw-data-wrapper scrolls to top when updated
+        const wrapper = document.querySelector('.raw-data-wrapper');
+        if(wrapper) wrapper.scrollTop = 0;
     } catch(err){console.error(err);}
 }
 
@@ -171,7 +218,7 @@ async function unflagRecord(id){
     } catch(err){console.error(err);}
 }
 
-function toggleRawData(){ rawVisible = !rawVisible; document.getElementById("rawDataText").style.display = rawVisible ? "block" : "none"; if(currentSelection.type==="system") showRawData(currentSelection.name, document.getElementById("dateSelect").value); }
+function toggleRawData(){ rawVisible = !rawVisible; document.getElementById("rawDataContainer").style.display = rawVisible ? "block" : "none"; if(currentSelection.type==="system") showRawData(currentSelection.name, document.getElementById("dateSelect").value); }
 function toggleLivePast(){ liveMode=!liveMode; document.getElementById("modeBtn").textContent = liveMode ? "Live" : "Past"; }
 function refreshLoop(){ refreshAll(); setTimeout(refreshLoop,20000); }
 refreshLoop();
