@@ -24,17 +24,71 @@ VECTOR_FILE = "vectorizer.pkl"
 MODEL_FILE = "category_model.pkl"
 
 SAMPLE_TEXTS = [
-    "facebook.com","youtube.com/watch?v=abc","instagram.com/user",
-    "wikipedia.org/wiki/Python","stackoverflow.com/questions","github.com/repo",
-    "netflix.com/title","coursera.org/course","khanacademy.org",
-    "google.com/search?q=python","docs.python.org","linkedin.com","gmail.com","zoom.us"
+    "facebook.com", 
+    "youtube.com/watch?v=abc123", 
+    "instagram.com/user/profile",
+    "stackoverflow.com/questions/12345", 
+    "github.com/openai/gpt", 
+    "netflix.com/title/6789",
+    "google.com/search?q=machine+learning", 
+    "docs.python.org/3/tutorial/",
+    "linkedin.com/in/developer",
+    "gmail.com/mail/u/0",
+    "zoom.us/j/123456789",
+    "twitter.com/home",
+    "reddit.com/r/technology/",
+    "spotify.com/playlist/abcd",
+    "coursera.org/learn/python",
+    "medium.com/@techstories",
+    "hulu.com/watch/series",
+    "dropbox.com/s/files",
+    "slack.com/workspace",
+    "bbc.com/news/world",
+    "pinterest.com/ideas/",
+    "amazon.in/product/B09XYZ",
+    "office.com/login",
+    "telegram.me/channel",
+    "twitch.tv/livegame",
+    "openai.com/research",
+    "disneyplus.com/movies/",
+    "flipkart.com/viewcart",
+    "nytimes.com/section/technology",
+    "quora.com/topic/AI"
 ]
+
 SAMPLE_LABELS = [
-    "Social","Entertainment","Social",
-    "Educational","Technical","Technical",
-    "Entertainment","Educational","Educational",
-    "Search","Technical","Work","Communication","Communication"
+    "Social",            # facebook.com
+    "Entertainment",     # youtube
+    "Social",            # instagram
+    "Technical",         # stackoverflow
+    "Technical",         # github
+    "Entertainment",     # netflix
+    "Search",            # google
+    "Technical",         # python docs
+    "Work",              # linkedin
+    "Communication",     # gmail
+    "Communication",     # zoom
+    "Social",            # twitter
+    "Social",            # reddit
+    "Entertainment",     # spotify
+    "Education",         # coursera
+    "Blog",              # medium
+    "Entertainment",     # hulu
+    "Work",              # dropbox
+    "Work",              # slack
+    "News",              # bbc
+    "Social",            # pinterest
+    "E-commerce",        # amazon
+    "Work",              # office
+    "Communication",     # telegram
+    "Entertainment",     # twitch
+    "Technical",         # openai
+    "Entertainment",     # disney+
+    "E-commerce",        # flipkart
+    "News",              # nytimes
+    "Knowledge"          # quora
 ]
+
 
 # ---------- ML helpers ----------
 def train_or_load_model():
