@@ -112,17 +112,24 @@ def predict_flag(url):
 
 def predict_category(url):
     """Predict category of the URL."""
-    # Special case: classify a specific IP as portal
-    if "110.171.151.102" in url:
-        return "Portal"
+    try:
+        if not os.path.exists(CAT_MODEL_FILE) or not os.path.exists(CAT_VECT_FILE):
+            print("⚠️ Category model not found — retraining...")
+            csv_path = '/home/Dhayalan/url_dataset.csv'
+            if os.path.exists(csv_path):
+                train_from_csv(csv_path)
+            else:
+                print("⚠️ CSV not found, cannot retrain category model.")
+                return "Uncategorized"
 
-    if not os.path.exists(CAT_MODEL_FILE) or not os.path.exists(CAT_VECT_FILE):
-        return "Education"
+        model = joblib.load(CAT_MODEL_FILE)
+        vectorizer = joblib.load(CAT_VECT_FILE)
+        X = vectorizer.transform([url])
+        return str(model.predict(X)[0])
 
-    model = joblib.load(CAT_MODEL_FILE)
-    vectorizer = joblib.load(CAT_VECT_FILE)
-    X = vectorizer.transform([url])
-    return str(model.predict(X)[0])
+    except Exception as e:
+        print(f"⚠️ Category prediction failed: {e}")
+        return "Uncategorized"
 
 # ------------------------------
 # DB helpers
