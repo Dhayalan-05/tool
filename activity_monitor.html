@@ -1,227 +1,419 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-<meta charset="utf-8" />
-<title>ActivityMonitor Pro — Labs Dashboard</title>
-<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Activity Dashboard</title>
+
+<!-- Bootstrap + ChartJS + Axios -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
 <style>
-  /* Reset / base */
-  *,*::before,*::after{box-sizing:border-box}
-  html,body{height:100%;margin:0;padding:0;-webkit-text-size-adjust:100%;font-family:"Segoe UI",Tahoma,sans-serif;background:#f4f6f8;color:#222}
-  .wrap{max-width:1100px;margin:0 auto;padding:20px;}
-  h1{text-align:center;margin-bottom:6px;font-size:20px}
-  p.lead{text-align:center;color:#666;margin-top:0;margin-bottom:12px;font-size:13px}
+body {
+    background-color: #f8f9fa;
+}
+#dataTableContainer, #chartContainer {
+    display: none;
+    transition: all 0.5s ease-in-out;
+}
+.card {
+    border-radius: 20px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+}
+.flagged-row {
+    background-color: #ffb3b3 !important;
+}
 
-  /* Top layout */
-  .top{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start;margin:18px 0}
-  .left,.right{background:#fff;padding:12px;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.06)}
-  .left{flex:0 0 320px;min-width:240px;max-height:calc(100vh - 160px);overflow:auto}
-  .right{flex:1;min-height:380px;display:flex;flex-direction:column;gap:12px;overflow:hidden}
-
-  /* Left panel */
-  .lab-item{padding:8px;border-bottom:1px solid #eee;cursor:pointer;display:flex;justify-content:space-between;align-items:center;}
-  .lab-item:hover{background:#f0f8ff}
-  .flag{width:12px;height:12px;border-radius:50%;display:inline-block;margin-left:6px}
-  .system-list{margin-left:10px;margin-top:6px;}
-  .system-item{padding:6px 8px;margin:4px 0;border-radius:6px;background:#fafafa;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
-  .system-item:hover{background:#f0f8ff}
-
-  /* Controls & chart area */
-  .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  button{padding:6px 10px;cursor:pointer;border:1px solid #aaa;background:#f5f5f5;border-radius:4px;font-size:13px}
-  select{padding:6px 8px;border-radius:4px;border:1px solid #aaa}
-
-  /* Canvas responsive */
-  .chart-wrap{background:#fff;border-radius:8px;padding:10px;display:flex;justify-content:center;align-items:center}
-  canvas{width:100% !important;height:300px !important;max-width:100%;display:block}
-
-  /* Summary & raw data */
-  .summary{color:#444;font-size:14px}
-  .note{color:#777;font-size:13px;margin-top:8px}
-
-  /* Raw table & scroll wrapper */
-  .raw-data-wrapper{overflow:auto;max-height:360px;border-radius:8px;background:#fff;padding:10px;border:1px solid #eee}
-  .raw-table{border-collapse:collapse;width:100%;font-size:13px;table-layout:fixed;word-wrap:break-word}
-  .raw-table th, .raw-table td{border:1px solid #ccc;padding:6px 8px;vertical-align:top}
-  .raw-table th{background:#f0f0f0}
-  .raw-table td{max-width:260px} /* prevent cells from expanding page width */
-
-  /* Small screens */
-  @media (max-width:900px){
-    .left{flex-basis:100%;max-height:220px}
-    .right{flex-basis:100%}
-    canvas{height:220px !important}
-    .raw-data-wrapper{max-height:260px}
-  }
+/* Loading Spinner */
+#loadingOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255,255,255,0.7);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+}
+.spinner-border {
+    width: 4rem;
+    height: 4rem;
+}
 </style>
 </head>
-<body>
-<div class="wrap">
-  <h1>ActivityMonitor Pro — Labs Dashboard</h1>
-  <p class="lead">Click a lab to expand systems. Click a system to view activity categories. Flags indicate restricted activity.</p>
+<body class="p-4">
 
-  <div class="top">
-    <div class="left" id="leftPanel">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <strong>Labs & Systems</strong>
-        <button onclick="refreshAll()">Refresh</button>
-      </div>
+<!-- Loading Spinner -->
+<div id="loadingOverlay">
+    <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+    </div>
+</div>
 
-      <div style="margin-top:10px;">
-        <label>Date: <input type="date" id="dateSelect" onchange="refreshAll()"></label>
-      </div>
+<div class="container text-center">
+    <h2 class="mb-3 text-primary">📊 Activity Monitoring Dashboard</h2>
 
-      <div id="labsContainer" style="margin-top:10px;"></div>
-      <div class="note">Auto-refreshes every 20s.</div>
+    <!-- Filters -->
+    <div class="row justify-content-center mb-3">
+        <div class="col-md-3">
+            <label class="form-label fw-bold">Select Date:</label>
+            <input type="date" id="datePicker" class="form-control" onchange="onDateChange()">
+        </div>
+        <div class="col-md-3">
+            <label class="form-label fw-bold">Select Lab:</label>
+            <select id="labSelect" class="form-select" onchange="onLabChange()" disabled>
+                <option value="">-- Select Lab --</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label fw-bold">Select System:</label>
+            <select id="systemSelect" class="form-select" onchange="onSystemChange()" disabled>
+                <option value="">-- Select System --</option>
+            </select>
+        </div>
     </div>
 
-    <div class="right">
-      <div class="controls" style="justify-content:space-between">
-        <div style="display:flex;gap:8px;align-items:center">
-          <button onclick="toggleLivePast()"><span id="modeBtn">Live</span> Mode</button>
-          <button onclick="toggleRawData()">Raw Data</button>
+    <!-- Buttons -->
+    <div class="mb-4">
+        <button class="btn btn-success me-2" onclick="toggleTable()">Show Raw Data</button>
+        <button class="btn btn-secondary me-2" onclick="reloadData()">🔄 Refresh Live Data</button>
+        <button class="btn btn-info" onclick="openPastDataModal()">📅 Past Data</button>
+    </div>
+
+    <!-- Chart -->
+    <div id="chartContainer" class="card p-3 mb-4">
+        <h5 class="text-center">📈 Category Distribution</h5>
+        <canvas id="activityChart" height="120"></canvas>
+    </div>
+
+    <!-- Raw Data Table -->
+    <div id="dataTableContainer" class="card p-3">
+        <h5 class="text-center">📋 Raw Activity Data</h5>
+        <div class="table-responsive">
+            <table class="table table-striped" id="dataTable">
+                <thead class="table-dark">
+                    <tr>
+                        <th>ID</th>
+                        <th>Lab</th>
+                        <th>System</th>
+                        <th>Category</th>
+                        <th>URL</th>
+                        <th>Timestamp</th>
+                        <th>Flag</th>
+                    </tr>
+                </thead>
+                <tbody id="dataBody"></tbody>
+            </table>
         </div>
-        <div><strong id="selectedTitle">Select a system</strong></div>
+        <button class="btn btn-danger mt-2" onclick="toggleTable()">Close Raw Data</button>
+    </div>
+</div>
+
+<!-- Past Data Modal -->
+<div class="modal fade" id="pastDataModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content rounded-4 shadow">
+      <div class="modal-header">
+        <h5 class="modal-title">📅 Fetch Past Data</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
+      <div class="modal-body text-start">
+        <label class="fw-bold">Select Date:</label>
+        <input type="date" id="pastDate" class="form-control mb-3" onchange="onPastDateChange()">
 
-      <div class="chart-wrap" aria-hidden="false">
-        <canvas id="pieChart" width="540" height="300" role="img" aria-label="Category pie chart"></canvas>
+        <label class="fw-bold">Select Lab:</label>
+        <select id="pastLab" class="form-select mb-3" onchange="onPastLabChange()" disabled>
+          <option value="">-- Choose Lab --</option>
+        </select>
+
+        <label class="fw-bold">Select System:</label>
+        <select id="pastSystem" class="form-select mb-3" disabled>
+          <option value="">-- Choose System --</option>
+        </select>
       </div>
-
-      <div class="summary" id="summaryText">No system selected.</div>
-
-      <!-- raw data area wrapped in scrollable container -->
-      <div id="rawDataContainer" style="display:none;">
-        <div class="raw-data-wrapper">
-          <div id="rawDataText"></div>
-        </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" onclick="fetchPastData()">Fetch Data</button>
       </div>
     </div>
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
 <script>
-// unchanged API settings (only ensure URL matches your server)
-const API_BASE = "https://dhayalan.pythonanywhere.com"; 
-const AUTH_USER = "admin";
-const AUTH_PASS = "myStrongPassword123";
+let chart;
+let allData = [];
+let labs = {};
+let selectedDate = "";
+let selectedLab = "";
+let selectedSystem = "";
 
-function authHeaders(){
-    const token = btoa(AUTH_USER + ":" + AUTH_PASS);
-    return { "Authorization": "Basic " + token };
+function showLoading() {
+    document.getElementById("loadingOverlay").style.display = "flex";
+}
+function hideLoading() {
+    document.getElementById("loadingOverlay").style.display = "none";
 }
 
-const ENDPOINT_LABS = API_BASE + "/labs";
-const ENDPOINT_SYS_SUM = API_BASE + "/system_summary";
-const ENDPOINT_DATA = API_BASE + "/data";
-const ENDPOINT_UNFLAG = API_BASE + "/unflag";
+document.addEventListener("DOMContentLoaded", () => {
+    loadLiveData();
+    setInterval(loadLiveData, 5000);
+});
 
-let pieChart = null, currentSelection = {type:null,name:null,lab:null}, liveMode = true, rawVisible = false;
-
-async function fetchJSON(url){
-    const res = await fetch(url, {headers: authHeaders()});
-    if(!res.ok) throw new Error("HTTP " + res.status);
-    return res.json();
-}
-
-async function refreshAll(){
-    const dateVal = document.getElementById("dateSelect").value || null;
+async function loadLiveData() {
     try {
-        const labs = await fetchJSON(ENDPOINT_LABS + (dateVal ? "?date=" + dateVal : ""));
-        renderLabs(labs);
-        if(currentSelection.type==="system"){
-            updatePieForSystem(currentSelection.name, currentSelection.lab, dateVal);
-            showRawData(currentSelection.name, dateVal);
+        const res = await axios.get("/data", {
+            auth: { username: "admin", password: "myStrongPassword123" }
+        });
+        allData = res.data || [];
+    } catch (err) {
+        console.error("Error fetching data:", err);
+    }
+}
+
+function onDateChange() {
+    selectedDate = document.getElementById("datePicker").value;
+    if (!selectedDate) return;
+    loadLabs(selectedDate);
+}
+
+async function loadLabs(date) {
+    showLoading();
+    try {
+        const res = await axios.get(`/labs?date=${date}`, {
+            auth: { username: "admin", password: "myStrongPassword123" }
+        });
+        labs = res.data || {};
+        const labSelect = document.getElementById("labSelect");
+        labSelect.innerHTML = `<option value="">-- Select Lab --</option>`;
+        if (Object.keys(labs).length === 0) {
+            alert("No labs have data on this date.");
+            labSelect.disabled = true;
+            hideLoading();
+            return;
         }
-    } catch(err) {
-        document.getElementById("labsContainer").innerHTML = "<div style='color:red'>Failed to fetch labs.</div>";
-        console.error(err);
+        Object.keys(labs).forEach(lab => {
+            const opt = document.createElement("option");
+            opt.value = lab;
+            opt.textContent = lab;
+            labSelect.appendChild(opt);
+        });
+        labSelect.disabled = false;
+        document.getElementById("systemSelect").disabled = true;
+    } catch (err) {
+        console.error("Error loading labs:", err);
+    } finally {
+        hideLoading();
     }
 }
 
-function renderLabs(labs){
-    const container = document.getElementById("labsContainer");
-    container.innerHTML = "";
-    if(!labs || Object.keys(labs).length === 0){ container.innerHTML="<div>No labs connected.</div>"; return; }
-    for(const [lab, systems] of Object.entries(labs)){
-        const labDiv = document.createElement("div"); labDiv.className = "lab-item";
-        let labFlag = false;
-        labDiv.innerHTML = `<div><strong>${lab}</strong></div><div id="flag_${lab}"></div>`;
-        const sysList = document.createElement("div"); sysList.className = "system-list"; sysList.style.display="none";
-        systems.forEach(s => {
-            const sdiv = document.createElement("div"); sdiv.className = "system-item"; sdiv.textContent = s.system_name;
-            if(s.flagged){const f = document.createElement("span"); f.className="flag"; f.style.background="red"; sdiv.appendChild(f);}
-            sdiv.onclick = (ev) => {
-                ev.stopPropagation();
-                currentSelection={type:"system",name:s.system_name,lab:lab};
-                updatePieForSystem(s.system_name, lab, document.getElementById("dateSelect").value);
-                showRawData(s.system_name, document.getElementById("dateSelect").value);
-            };
-            sysList.appendChild(sdiv);
-            if(s.flagged) labFlag = true;
-        });
-        labDiv.onclick = ()=>{ sysList.style.display = sysList.style.display==="none" ? "block" : "none"; };
-        if(labFlag){const f=document.createElement("span");f.className="flag";f.style.background="red";labDiv.appendChild(f);}
-        container.appendChild(labDiv); container.appendChild(sysList);
+function onLabChange() {
+    selectedLab = document.getElementById("labSelect").value;
+    const systemSelect = document.getElementById("systemSelect");
+    systemSelect.innerHTML = `<option value="">-- Select System --</option>`;
+    if (!selectedLab || !labs[selectedLab]) {
+        systemSelect.disabled = true;
+        return;
+    }
+    labs[selectedLab].forEach(sys => {
+        const opt = document.createElement("option");
+        opt.value = sys.system_name;
+        opt.textContent = sys.system_name;
+        systemSelect.appendChild(opt);
+    });
+    systemSelect.disabled = false;
+}
+
+function onSystemChange() {
+    selectedSystem = document.getElementById("systemSelect").value;
+    if (!selectedSystem) return;
+    filterAndRender();
+}
+
+function toggleTable() {
+    const tableDiv = document.getElementById("dataTableContainer");
+    const chartDiv = document.getElementById("chartContainer");
+    if (tableDiv.style.display === "none") {
+        tableDiv.style.display = "block";
+        chartDiv.style.transform = "translateY(-20px)";
+    } else {
+        tableDiv.style.display = "none";
+        chartDiv.style.transform = "translateY(0)";
     }
 }
 
-async function updatePieForSystem(system, lab, date){
+function reloadData() {
+    loadLiveData();
+}
+
+function openPastDataModal() {
+    const modal = new bootstrap.Modal(document.getElementById("pastDataModal"));
+    modal.show();
+}
+
+async function onPastDateChange() {
+    const date = document.getElementById("pastDate").value;
+    if (!date) return;
+    showLoading();
     try {
-        const data = await fetchJSON(`${ENDPOINT_SYS_SUM}?system=${encodeURIComponent(system)}${date ? "&date=" + date : ""}`);
-        const ctx = document.getElementById("pieChart").getContext("2d");
-        if(pieChart) pieChart.destroy();
-        pieChart = new Chart(ctx, {
-            type:'pie',
-            data:{
-                labels:Object.keys(data),
-                datasets:[{data:Object.values(data), backgroundColor:['#4caf50','#2196f3','#ff9800','#f44336','#9c27b0','#607d8b']}]
-            },
-            options:{plugins:{legend:{position:'bottom'}}}
+        const res = await axios.get(`/labs?date=${date}`, {
+            auth: { username: "admin", password: "myStrongPassword123" }
         });
-        document.getElementById("summaryText").textContent = `Category summary for ${system}`;
-        document.getElementById("selectedTitle").textContent = system;
-    } catch(err){console.error(err);}
+        const labsData = res.data || {};
+        const pastLab = document.getElementById("pastLab");
+        pastLab.innerHTML = `<option value="">-- Choose Lab --</option>`;
+        Object.keys(labsData).forEach(lab => {
+            const opt = document.createElement("option");
+            opt.value = lab;
+            opt.textContent = lab;
+            pastLab.appendChild(opt);
+        });
+        pastLab.disabled = Object.keys(labsData).length === 0;
+        if (Object.keys(labsData).length === 0) {
+            alert("No labs found for this date.");
+        }
+        document.getElementById("pastSystem").innerHTML = `<option value="">-- Choose System --</option>`;
+        document.getElementById("pastSystem").disabled = true;
+    } catch (err) {
+        console.error("Error loading past labs:", err);
+    } finally {
+        hideLoading();
+    }
 }
 
-async function showRawData(system, date){
-    // toggle visibility of container
-    document.getElementById("rawDataContainer").style.display = rawVisible ? "block" : "none";
-    if(!rawVisible) return;
+async function onPastLabChange() {
+    const lab = document.getElementById("pastLab").value;
+    const date = document.getElementById("pastDate").value;
+    if (!lab || !date) return;
+    const res = await axios.get(`/labs?date=${date}`, {
+        auth: { username: "admin", password: "myStrongPassword123" }
+    });
+    const systems = res.data[lab] || [];
+    const pastSystem = document.getElementById("pastSystem");
+    pastSystem.innerHTML = `<option value="">-- Choose System --</option>`;
+    systems.forEach(sys => {
+        const opt = document.createElement("option");
+        opt.value = sys.system_name;
+        opt.textContent = sys.system_name;
+        pastSystem.appendChild(opt);
+    });
+    pastSystem.disabled = systems.length === 0;
+    if (systems.length === 0) alert("No systems available for this lab/date.");
+}
+
+async function fetchPastData() {
+    const date = document.getElementById("pastDate").value;
+    const lab = document.getElementById("pastLab").value;
+    const system = document.getElementById("pastSystem").value;
+    if (!date || !lab || !system) {
+        alert("Please select date, lab, and system.");
+        return;
+    }
+    showLoading();
     try {
-        const allData = await fetchJSON(`${ENDPOINT_DATA}${date ? "?date=" + date : ""}`);
-        let filtered = allData.filter(r=>r.system_name===system);
-        let html = "<table class='raw-table'><tr><th>ID</th><th>Time</th><th>Browser</th><th>Title</th><th>URL</th><th>Category</th><th>Flag</th><th>Action</th></tr>";
-        filtered.forEach(r=>{
-            const safeTitle = (r.title||"").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-            const safeUrl = (r.url||"").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-            html += `<tr><td style="width:60px;">${r.id}</td><td style="width:140px;">${r.timestamp}</td><td style="width:100px;">${r.browser}</td><td>${safeTitle}</td><td>${safeUrl}</td><td style="width:100px;">${r.category}</td><td style="width:80px;">${r.flagged ? '<span style="color:red">Flagged</span>' : 'No'}</td>`;
-            html += `<td style="width:80px;">${r.flagged ? `<button onclick='unflagRecord(${r.id})'>Unflag</button>` : ""}</td></tr>`;
+        const res = await axios.get(`/data?date=${date}`, {
+            auth: { username: "admin", password: "myStrongPassword123" }
         });
-        html += "</table>";
-        document.getElementById("rawDataText").innerHTML = html;
-        // Ensure the raw-data-wrapper scrolls to top when updated
-        const wrapper = document.querySelector('.raw-data-wrapper');
-        if(wrapper) wrapper.scrollTop = 0;
-    } catch(err){console.error(err);}
+        allData = res.data.filter(r => r.lab_name === lab && r.system_name === system);
+        if (allData.length === 0) {
+            alert("No data found for the selected date/lab/system.");
+            document.getElementById("chartContainer").style.display = "none";
+            document.getElementById("dataTableContainer").style.display = "none";
+        } else {
+            renderChart(allData);
+            renderTable(allData);
+            document.getElementById("chartContainer").style.display = "block";
+            document.getElementById("dataTableContainer").style.display = "block";
+        }
+        bootstrap.Modal.getInstance(document.getElementById("pastDataModal")).hide();
+    } catch (err) {
+        console.error("Error fetching past data:", err);
+    } finally {
+        hideLoading();
+    }
 }
 
-async function unflagRecord(id){
-    try{
-        const res = await fetch(ENDPOINT_UNFLAG, {
-            method:'POST',
-            headers:{...authHeaders(), 'Content-Type':'application/json'},
-            body:JSON.stringify({id:id})
-        });
-        if(res.ok){ alert("Record unflagged."); refreshAll(); }
-    } catch(err){console.error(err);}
+function filterAndRender() {
+    let dataToShow = allData;
+    if (selectedDate) dataToShow = dataToShow.filter(r => r.timestamp.startsWith(selectedDate));
+    if (selectedLab) dataToShow = dataToShow.filter(r => r.lab_name === selectedLab);
+    if (selectedSystem) dataToShow = dataToShow.filter(r => r.system_name === selectedSystem);
+
+    if (dataToShow.length > 0) {
+        document.getElementById("chartContainer").style.display = "block";
+        document.getElementById("dataTableContainer").style.display = "block";
+    } else {
+        document.getElementById("chartContainer").style.display = "none";
+        document.getElementById("dataTableContainer").style.display = "none";
+        alert("No data available for this date/lab/system.");
+    }
+
+    renderChart(dataToShow);
+    renderTable(dataToShow);
 }
 
-function toggleRawData(){ rawVisible = !rawVisible; document.getElementById("rawDataContainer").style.display = rawVisible ? "block" : "none"; if(currentSelection.type==="system") showRawData(currentSelection.name, document.getElementById("dateSelect").value); }
-function toggleLivePast(){ liveMode=!liveMode; document.getElementById("modeBtn").textContent = liveMode ? "Live" : "Past"; }
-function refreshLoop(){ refreshAll(); setTimeout(refreshLoop,20000); }
-refreshLoop();
+function renderChart(data) {
+    const ctx = document.getElementById('activityChart').getContext('2d');
+    const categoryCount = {};
+    data.forEach(r => {
+        if (r.category) categoryCount[r.category] = (categoryCount[r.category] || 0) + 1;
+    });
+    const labels = Object.keys(categoryCount);
+    const values = Object.values(categoryCount);
+
+    if (chart) chart.destroy();
+    chart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: labels.length ? labels : ["No Data"],
+            datasets: [{
+                data: values.length ? values : [1],
+                backgroundColor: ['#36a2eb','#ff6384','#ff9f40','#4bc0c0','#9966ff'],
+                borderWidth: 1
+            }]
+        },
+        options: { responsive: true, animation: { animateScale: true } }
+    });
+}
+
+function renderTable(data) {
+    const body = document.getElementById("dataBody");
+    body.innerHTML = "";
+    data.forEach(r => {
+        const tr = document.createElement("tr");
+        if (r.flagged === 1) tr.classList.add("flagged-row");
+        tr.innerHTML = `
+            <td>${r.id}</td>
+            <td>${r.lab_name}</td>
+            <td>${r.system_name}</td>
+            <td>${r.category}</td>
+            <td><a href="${r.url}" target="_blank">${r.url}</a></td>
+            <td>${r.timestamp}</td>
+            <td>
+                <button class="btn btn-sm ${r.flagged ? 'btn-warning' : 'btn-outline-danger'}"
+                    onclick="toggleFlag(${r.id}, ${r.flagged})">
+                    ${r.flagged ? 'Unflag' : 'Flag'}
+                </button>
+            </td>
+        `;
+        body.appendChild(tr);
+    });
+}
+
+async function toggleFlag(id, flagged) {
+    showLoading();
+    const endpoint = flagged ? "/unflag" : "/flag";
+    await axios.post(endpoint, { id }, {
+        auth: { username: "admin", password: "myStrongPassword123" }
+    });
+    hideLoading();
+    reloadData();
+}
 </script>
 </body>
 </html>
