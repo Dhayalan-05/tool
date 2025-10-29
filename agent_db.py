@@ -1,4 +1,4 @@
-# agent_db.py
+# agent_db.py 
 # Required packages: pip install requests psutil scikit-learn joblib
 
 import os
@@ -23,7 +23,7 @@ ALLOWED_DOMAINS = ["110.172.151.102"]
 VECTOR_FILE = "vectorizer.pkl"
 MODEL_FILE = "category_model.pkl"
 
-# ---------- TRAINING DATA ----------
+# ---------- Training Dataset ----------
 SAMPLE_TEXTS = [
     "facebook.com", "youtube.com/watch?v=abc123", "instagram.com/user/profile",
     "stackoverflow.com/questions/12345", "github.com/openai/gpt", "netflix.com/title/6789",
@@ -33,101 +33,99 @@ SAMPLE_TEXTS = [
     "hulu.com/watch/series", "dropbox.com/s/files", "slack.com/workspace", "bbc.com/news/world",
     "pinterest.com/ideas/", "amazon.in/product/B09XYZ", "office.com/login", "telegram.me/channel",
     "twitch.tv/livegame", "openai.com/research", "disneyplus.com/movies/", "flipkart.com/viewcart",
-    "nytimes.com/section/technology", "quora.com/topic/AI", "udemy.com/course/python",
-    "hotstar.com/in", "whatsapp.com", "teams.microsoft.com", "news.google.com", "medium.com",
-    "developer.mozilla.org", "microsoft.com", "trello.com", "notion.so", "zoom.us", "snapchat.com"
+    "nytimes.com/section/technology", "quora.com/topic/AI", "110.171.151.102/portal/login"
 ]
 
 SAMPLE_LABELS = [
     "Social", "Entertainment", "Social",
     "Technical", "Technical", "Entertainment",
     "Search", "Technical", "Work",
-    "Communication", "Communication", "Social", "Social",
-    "Entertainment", "Education", "Blog",
-    "Entertainment", "Work", "Work", "News",
-    "Social", "E-commerce", "Work", "Communication",
-    "Entertainment", "Technical", "Entertainment",
-    "E-commerce", "News", "Knowledge", "Education",
-    "Entertainment", "Social", "Work", "News", "Blog",
-    "Technical", "Work", "Work", "Work", "Communication", "Social"
+    "Communication", "Communication", "Social",
+    "Social", "Entertainment", "Education",
+    "Blog", "Entertainment", "Work", "Work",
+    "News", "Social", "E-commerce", "Work",
+    "Communication", "Entertainment", "Technical",
+    "E-commerce", "News", "Knowledge", "Portal"
 ]
 
-# ---------- ML MODEL ----------
+# ---------- ML Setup ----------
 def train_or_load_model():
     import joblib
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.ensemble import RandomForestClassifier
-    from sklearn.model_selection import train_test_split
-    from sklearn.metrics import accuracy_score
 
     try:
-        vectorizer = joblib.load(VECTOR_FILE)
-        clf = joblib.load(MODEL_FILE)
-        return vectorizer, clf
+        if os.path.exists(VECTOR_FILE) and os.path.exists(MODEL_FILE):
+            vectorizer = joblib.load(VECTOR_FILE)
+            clf = joblib.load(MODEL_FILE)
+            print("[Agent ML] Loaded existing category model.")
+            return vectorizer, clf
+        else:
+            raise FileNotFoundError
     except:
-        vectorizer = TfidfVectorizer(ngram_range=(1, 2), stop_words='english', lowercase=True)
+        print("[Agent ML] Training new model from samples...")
+        vectorizer = TfidfVectorizer(ngram_range=(1, 2), stop_words="english")
         X = vectorizer.fit_transform(SAMPLE_TEXTS)
-        clf = RandomForestClassifier(n_estimators=120, random_state=42, class_weight="balanced")
+        clf = RandomForestClassifier(n_estimators=120, random_state=42)
         clf.fit(X, SAMPLE_LABELS)
         joblib.dump(vectorizer, VECTOR_FILE)
         joblib.dump(clf, MODEL_FILE)
-        print("[Agent] ML model trained and saved.")
+        print("[Agent ML] Model trained and saved.")
         return vectorizer, clf
 
 VECTOR, MODEL = train_or_load_model()
 
 def classify_text(text):
+    """Classify given text or URL."""
+    import joblib
     try:
-        X = VECTOR.transform([text])
-        prediction = MODEL.predict(X)[0]
-        return prediction
-    except Exception as e:
-        print("[Agent] Classification error:", e)
-        return "Other"
+        # IP-based rule
+        if "110.171.151.102" in text:
+            return "Portal"
 
-# ---------- BROWSER DETECTION ----------
+        # Predict using model
+        X = VECTOR.transform([text])
+        pred = MODEL.predict(X)[0]
+        return pred
+    except Exception as e:
+        print(f"[Agent ML Error] {e}")
+        return "Uncategorized"
+
+# ---------- Browser ----------
 def detect_browsers():
     browsers_found = {}
     local = os.getenv("LOCALAPPDATA", "")
     appdata = os.getenv("APPDATA", "")
-
     if local:
         for folder in os.listdir(local):
             path = os.path.join(local, folder)
-            if not os.path.isdir(path):
-                continue
-
-            chrome_path = os.path.join(path, "Google", "Chrome", "User Data")
-            if os.path.exists(chrome_path):
-                for profile in os.listdir(chrome_path):
-                    hist = os.path.join(chrome_path, profile, "History")
-                    if os.path.exists(hist):
-                        browsers_found[f"Chrome_{profile}"] = hist
-
-            edge_path = os.path.join(path, "Microsoft", "Edge", "User Data")
-            if os.path.exists(edge_path):
-                for profile in os.listdir(edge_path):
-                    hist = os.path.join(edge_path, profile, "History")
-                    if os.path.exists(hist):
-                        browsers_found[f"Edge_{profile}"] = hist
-
-            brave_path = os.path.join(path, "BraveSoftware", "Brave-Browser", "User Data")
-            if os.path.exists(brave_path):
-                for profile in os.listdir(brave_path):
-                    hist = os.path.join(brave_path, profile, "History")
-                    if os.path.exists(hist):
-                        browsers_found[f"Brave_{profile}"] = hist
-
-    firefox_root = os.path.join(appdata, "Mozilla", "Firefox", "Profiles")
-    if os.path.exists(firefox_root):
+            if os.path.isdir(path):
+                chrome_path = os.path.join(path, "Google\\Chrome\\User Data")
+                if os.path.exists(chrome_path):
+                    for profile in os.listdir(chrome_path):
+                        hist = os.path.join(chrome_path, profile, "History")
+                        if os.path.exists(hist):
+                            browsers_found[f"Chrome_{profile}"] = hist
+                edge_path = os.path.join(path, "Microsoft\\Edge\\User Data")
+                if os.path.exists(edge_path):
+                    for profile in os.listdir(edge_path):
+                        hist = os.path.join(edge_path, profile, "History")
+                        if os.path.exists(hist):
+                            browsers_found[f"Edge_{profile}"] = hist
+                brave_path = os.path.join(path, "BraveSoftware\\Brave-Browser\\User Data")
+                if os.path.exists(brave_path):
+                    for profile in os.listdir(brave_path):
+                        hist = os.path.join(brave_path, "History")
+                        if os.path.exists(hist):
+                            browsers_found[f"Brave_{profile}"] = hist
+    firefox_root = os.path.join(appdata, "Mozilla\\Firefox\\Profiles")
+    if firefox_root and os.path.exists(firefox_root):
         for profile in os.listdir(firefox_root):
             places = os.path.join(firefox_root, profile, "places.sqlite")
             if os.path.exists(places):
                 browsers_found[f"Firefox_{profile}"] = places
-
     return browsers_found
 
-# ---------- HISTORY EXTRACTION ----------
 def extract_history(db_path, browser_name):
     temp = f"temp_{browser_name.replace(' ', '_')}.db"
     out = []
@@ -139,22 +137,22 @@ def extract_history(db_path, browser_name):
             cur.execute("SELECT url, title, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 100")
             rows = cur.fetchall()
         except:
-            cur.execute("SELECT url, title, last_visit_date FROM moz_places ORDER BY last_visit_date DESC LIMIT 100")
-            rows = cur.fetchall()
-
+            try:
+                cur.execute("SELECT url, title, last_visit_date FROM moz_places ORDER BY last_visit_date DESC LIMIT 100")
+                rows = cur.fetchall()
+            except:
+                rows = []
         conn.close()
         os.remove(temp)
-
         for r in rows:
-            url = r[0] if r else ""
-            title = r[1] if len(r) > 1 else ""
+            url = r[0] if r and len(r) > 0 else ""
+            title = r[1] if r and len(r) > 1 else ""
             ts = datetime.utcnow().isoformat()
             category = classify_text(title + " " + url)
-            flagged = 0 if any(d in url for d in ALLOWED_DOMAINS) else 1
-
-            print(f"[Agent ML] {url} => {category}")
-
-
+            flagged = 0
+            if not any(d in url for d in ALLOWED_DOMAINS):
+                flagged = 1
+            print(f"[Agent ML] {url} => {category}")  # Debug line
             out.append({
                 "browser": browser_name,
                 "url": url,
@@ -165,12 +163,10 @@ def extract_history(db_path, browser_name):
                 "category": category,
                 "flagged": flagged
             })
-
     except Exception as e:
         print(f"[Agent] {browser_name} extraction error:", e)
     return out
 
-# ---------- DATA BUFFER ----------
 BUFFER_FILE = "unsent_buffer.json"
 
 def load_buffer():
@@ -186,7 +182,6 @@ def save_buffer(data):
     with open(BUFFER_FILE, "w") as f:
         json.dump(data, f)
 
-# ---------- SERVER UPLOAD ----------
 def send_to_server(records):
     if not records:
         return
@@ -198,13 +193,11 @@ def send_to_server(records):
             if os.path.exists(BUFFER_FILE):
                 os.remove(BUFFER_FILE)
         else:
-            print("[Agent] ⚠ Server rejected data:", res.status_code)
             save_buffer(all_records)
     except Exception as e:
         print(f"[Agent] ⚠ Could not send data to server: {e}")
         save_buffer(all_records)
 
-# ---------- MAIN ----------
 def main():
     print(f"=== Agent started ===\nSending data to: {SERVER_URL}")
     while True:
