@@ -152,6 +152,9 @@ def extract_history(db_path, browser_name):
             category = classify_text(title + " " + url)
             flagged = 0 if any(d in url for d in ALLOWED_DOMAINS) else 1
 
+            print(f"[Agent ML] {url} => {category}")
+
+
             out.append({
                 "browser": browser_name,
                 "url": url,
