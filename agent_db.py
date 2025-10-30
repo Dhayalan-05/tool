@@ -9,6 +9,8 @@ import requests
 import shutil
 from datetime import datetime
 import json
+import getpass
+import pathlib
 
 # --------- CONFIG ----------
 SERVER_URL = "https://Dhayalan.pythonanywhere.com/upload"
@@ -23,7 +25,7 @@ ALLOWED_DOMAINS = ["110.172.151.102"]
 VECTOR_FILE = "vectorizer.pkl"
 MODEL_FILE = "category_model.pkl"
 
-# ✅ FIXED ML TRAINING DATA (same logic, corrected mismatch)
+# ✅ FIXED ML TRAINING DATA
 SAMPLE_TEXTS = [
     "facebook.com","youtube.com/watch?v=abc123","instagram.com/user/profile",
     "stackoverflow.com/questions/12345","github.com/openai/gpt","netflix.com/title/6789",
@@ -83,41 +85,43 @@ def classify_text(text):
         print(f"[Agent ML] Prediction error: {e}")
         return "Uncategorized"
 
-# ---------- Browser ----------
-def detect_browsers():
+# ---------- ✅ MULTI-USER BROWSER DETECTION ----------
+def detect_browsers_all_users():
+    """Detect browsers for all user accounts in Windows"""
+    users_dir = pathlib.Path("C:/Users")
     browsers_found = {}
-    local = os.getenv("LOCALAPPDATA", "")
-    appdata = os.getenv("APPDATA", "")
-    if local:
-        for folder in os.listdir(local):
-            path = os.path.join(local, folder)
-            if os.path.isdir(path):
-                chrome_path = os.path.join(path, "Google\\Chrome\\User Data")
-                if os.path.exists(chrome_path):
-                    for profile in os.listdir(chrome_path):
-                        hist = os.path.join(chrome_path, profile, "History")
-                        if os.path.exists(hist):
-                            browsers_found[f"Chrome_{profile}"] = hist
-                edge_path = os.path.join(path, "Microsoft\\Edge\\User Data")
-                if os.path.exists(edge_path):
-                    for profile in os.listdir(edge_path):
-                        hist = os.path.join(edge_path, "History")
-                        if os.path.exists(hist):
-                            browsers_found[f"Edge_{profile}"] = hist
-                brave_path = os.path.join(path, "BraveSoftware\\Brave-Browser\\User Data")
-                if os.path.exists(brave_path):
-                    for profile in os.listdir(brave_path):
-                        hist = os.path.join(brave_path, "History")
-                        if os.path.exists(hist):
-                            browsers_found[f"Brave_{profile}"] = hist
-    firefox_root = os.path.join(appdata, "Mozilla\\Firefox\\Profiles")
-    if firefox_root and os.path.exists(firefox_root):
-        for profile in os.listdir(firefox_root):
-            places = os.path.join(firefox_root, profile, "places.sqlite")
-            if os.path.exists(places):
-                browsers_found[f"Firefox_{profile}"] = places
+
+    for user_folder in users_dir.iterdir():
+        if not user_folder.is_dir():
+            continue
+        user_name = user_folder.name
+        local = user_folder / "AppData/Local"
+        appdata = user_folder / "AppData/Roaming"
+
+        # Chrome, Edge, Brave
+        for browser_name, subpath in {
+            "Chrome": "Google/Chrome/User Data",
+            "Edge": "Microsoft/Edge/User Data",
+            "Brave": "BraveSoftware/Brave-Browser/User Data"
+        }.items():
+            base_path = local / subpath
+            if base_path.exists():
+                for profile in base_path.iterdir():
+                    hist = profile / "History"
+                    if hist.exists():
+                        browsers_found[f"{browser_name}_{user_name}_{profile.name}"] = str(hist)
+
+        # Firefox
+        firefox_path = appdata / "Mozilla/Firefox/Profiles"
+        if firefox_path.exists():
+            for profile in firefox_path.iterdir():
+                places = profile / "places.sqlite"
+                if places.exists():
+                    browsers_found[f"Firefox_{user_name}_{profile.name}"] = str(places)
+
     return browsers_found
 
+# ---------- Browser Extraction ----------
 def extract_history(db_path, browser_name):
     temp = f"temp_{browser_name.replace(' ', '_')}.db"
     out = []
@@ -136,6 +140,13 @@ def extract_history(db_path, browser_name):
                 rows=[]
         conn.close()
         os.remove(temp)
+
+        # Extract username from browser name tag
+        user_tag = "Unknown"
+        parts = browser_name.split("_")
+        if len(parts) >= 2:
+            user_tag = parts[1]
+
         for r in rows:
             url = r[0] if r and len(r)>0 else ""
             title = r[1] if r and len(r)>1 else ""
@@ -146,6 +157,7 @@ def extract_history(db_path, browser_name):
                 flagged = 1
             out.append({
                 "browser": browser_name,
+                "user_name": user_tag,
                 "url": url,
                 "title": title,
                 "timestamp": ts,
@@ -193,7 +205,7 @@ def main():
     print(f"=== Agent started ===\nSending data to: {SERVER_URL}")
     while True:
         aggregated=[]
-        browsers = detect_browsers()
+        browsers = detect_browsers_all_users()
         for bname, path in browsers.items():
             aggregated.extend(extract_history(path,bname))
         send_to_server(aggregated)
