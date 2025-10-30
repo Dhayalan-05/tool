@@ -1,4 +1,3 @@
-# agent_db.py
 # Required packages: pip install requests psutil scikit-learn joblib
 
 import os
@@ -9,8 +8,8 @@ import requests
 import shutil
 from datetime import datetime
 import json
-import getpass
 import pathlib
+import subprocess  # ✅ added for PowerShell command execution
 
 # --------- CONFIG ----------
 SERVER_URL = "https://Dhayalan.pythonanywhere.com/upload"
@@ -48,7 +47,6 @@ SAMPLE_LABELS = [
 
 # ---------- ✅ FIXED ML ----------
 def train_or_load_model():
-    """Train or load model safely without mismatch"""
     import joblib
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.ensemble import RandomForestClassifier
@@ -75,8 +73,9 @@ def train_or_load_model():
 VECTOR, MODEL = train_or_load_model()
 
 def classify_text(text):
-    """Predict URL category"""
     try:
+        if "110.172.151.102" in text:
+            return "Portal"
         if VECTOR is None or MODEL is None:
             return "Uncategorized"
         X = VECTOR.transform([text])
@@ -85,12 +84,46 @@ def classify_text(text):
         print(f"[Agent ML] Prediction error: {e}")
         return "Uncategorized"
 
+# ---------- ✅ VPN DETECTION & DISABLE ----------
+def detect_and_disable_vpn_adapters():
+    """Detect VPN adapters and disable them if active."""
+    try:
+        # PowerShell command to get active adapters containing VPN or TAP etc.
+        ps_cmd = (
+            "Get-NetAdapter | Where-Object {($_.Status -eq 'Up') -and "
+            "($_.Name -match 'VPN' -or $_.InterfaceDescription -match 'TAP|OpenVPN|WireGuard|Proton|Nord')} | "
+            "Select-Object -ExpandProperty Name"
+        )
+        result = subprocess.run(
+            ["powershell", "-Command", ps_cmd],
+            capture_output=True, text=True
+        )
+
+        active_vpns = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        if active_vpns:
+            for adapter in active_vpns:
+                disable_cmd = f"Disable-NetAdapter -Name '{adapter}' -Confirm:$false"
+                subprocess.run(["powershell", "-Command", disable_cmd], capture_output=True)
+                print(f"[Agent VPN] Disabled VPN adapter: {adapter}")
+
+            # Log it
+            log_entry = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "system": SYSTEM_NAME,
+                "lab": LAB_NAME,
+                "vpn_disabled": active_vpns
+            }
+            with open("vpn_log.json", "a") as f:
+                f.write(json.dumps(log_entry) + "\n")
+        else:
+            print("[Agent VPN] No active VPN adapters found.")
+    except Exception as e:
+        print(f"[Agent VPN] Error detecting/disabling VPN: {e}")
+
 # ---------- ✅ MULTI-USER BROWSER DETECTION ----------
 def detect_browsers_all_users():
-    """Detect browsers for all user accounts in Windows"""
     users_dir = pathlib.Path("C:/Users")
     browsers_found = {}
-
     for user_folder in users_dir.iterdir():
         if not user_folder.is_dir():
             continue
@@ -98,7 +131,6 @@ def detect_browsers_all_users():
         local = user_folder / "AppData/Local"
         appdata = user_folder / "AppData/Roaming"
 
-        # Chrome, Edge, Brave
         for browser_name, subpath in {
             "Chrome": "Google/Chrome/User Data",
             "Edge": "Microsoft/Edge/User Data",
@@ -111,17 +143,15 @@ def detect_browsers_all_users():
                     if hist.exists():
                         browsers_found[f"{browser_name}_{user_name}_{profile.name}"] = str(hist)
 
-        # Firefox
         firefox_path = appdata / "Mozilla/Firefox/Profiles"
         if firefox_path.exists():
             for profile in firefox_path.iterdir():
                 places = profile / "places.sqlite"
                 if places.exists():
                     browsers_found[f"Firefox_{user_name}_{profile.name}"] = str(places)
-
     return browsers_found
 
-# ---------- Browser Extraction ----------
+# ---------- ✅ Browser Extraction ----------
 def extract_history(db_path, browser_name):
     temp = f"temp_{browser_name.replace(' ', '_')}.db"
     out = []
@@ -130,26 +160,25 @@ def extract_history(db_path, browser_name):
         conn = sqlite3.connect(temp)
         cur = conn.cursor()
         try:
-            cur.execute("SELECT url, title, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 100")
+            cur.execute("SELECT url, title, last_visit_time FROM urls ORDER BY last_visit_time DESC")
             rows = cur.fetchall()
         except:
             try:
-                cur.execute("SELECT url, title, last_visit_date FROM moz_places ORDER BY last_visit_date DESC LIMIT 100")
+                cur.execute("SELECT url, title, last_visit_date FROM moz_places ORDER BY last_visit_date DESC")
                 rows = cur.fetchall()
             except:
-                rows=[]
+                rows = []
         conn.close()
         os.remove(temp)
 
-        # Extract username from browser name tag
         user_tag = "Unknown"
         parts = browser_name.split("_")
         if len(parts) >= 2:
             user_tag = parts[1]
 
         for r in rows:
-            url = r[0] if r and len(r)>0 else ""
-            title = r[1] if r and len(r)>1 else ""
+            url = r[0] if r and len(r) > 0 else ""
+            title = r[1] if r and len(r) > 1 else ""
             ts = datetime.utcnow().isoformat()
             category = classify_text(title + " " + url)
             flagged = 0
@@ -170,46 +199,59 @@ def extract_history(db_path, browser_name):
         print(f"[Agent] {browser_name} extraction error:", e)
     return out
 
+# ---------- ✅ Safe buffer ----------
 BUFFER_FILE = "unsent_buffer.json"
 
 def load_buffer():
     if os.path.exists(BUFFER_FILE):
         try:
-            with open(BUFFER_FILE,"r") as f:
+            with open(BUFFER_FILE, "r") as f:
                 return json.load(f)
         except:
             return []
     return []
 
 def save_buffer(data):
-    with open(BUFFER_FILE,"w") as f:
-        json.dump(data,f)
+    with open(BUFFER_FILE, "w") as f:
+        json.dump(data, f)
 
-def send_to_server(records):
+# ---------- ✅ CHUNKED UPLOAD ----------
+def send_to_server(records, chunk_size=500):
     if not records:
         return
     all_records = load_buffer() + records
-    try:
-        res = requests.post(SERVER_URL, json=all_records, timeout=10, auth=(AUTH_USER, AUTH_PASS))
-        if res.status_code == 200:
-            print(f"[Agent] Sent {len(all_records)} records to server.")
-            if os.path.exists(BUFFER_FILE):
-                os.remove(BUFFER_FILE)
-        else:
-            save_buffer(all_records)
-    except Exception as e:
-        print(f"[Agent] ⚠ Could not send data to server: {e}")
-        save_buffer(all_records)
+    total = len(all_records)
+    sent = 0
+    while sent < total:
+        chunk = all_records[sent:sent + chunk_size]
+        try:
+            res = requests.post(SERVER_URL, json=chunk, timeout=60, auth=(AUTH_USER, AUTH_PASS))
+            if res.status_code == 200:
+                print(f"[Agent] Sent {len(chunk)} records (chunk {sent//chunk_size+1}) successfully.")
+            else:
+                print(f"[Agent] ⚠ Server returned {res.status_code}, buffering chunk.")
+                save_buffer(all_records[sent:])
+                return
+        except Exception as e:
+            print(f"[Agent] ⚠ Send failed: {e}, buffering remaining data.")
+            save_buffer(all_records[sent:])
+            return
+        sent += len(chunk)
+    if os.path.exists(BUFFER_FILE):
+        os.remove(BUFFER_FILE)
 
+# ---------- ✅ MAIN LOOP ----------
 def main():
-    print(f"=== Agent started ===\nSending data to: {SERVER_URL}")
+    print(f"=== Agent Started ===\nSending data to: {SERVER_URL}")
     while True:
-        aggregated=[]
+        detect_and_disable_vpn_adapters()  # ✅ added here
+        aggregated = []
         browsers = detect_browsers_all_users()
         for bname, path in browsers.items():
-            aggregated.extend(extract_history(path,bname))
+            aggregated.extend(extract_history(path, bname))
+        print(f"[Agent] Collected {len(aggregated)} records from all users.")
         send_to_server(aggregated)
         time.sleep(SLEEP_INTERVAL)
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
