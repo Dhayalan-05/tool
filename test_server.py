@@ -1,39 +1,15 @@
 import os
-import sqlite3
 import joblib
 import pandas as pd
 import numpy as np
-
-from flask import Flask
-from pymongo import MongoClient
-import os
-
-app = Flask(__name__)
-
-# Get MongoDB URI from Render environment variables
-MONGO_URI = os.environ.get("MONGO_URI")
-
-client = MongoClient(MONGO_URI)
-db = client["mydatabase"]  # You can name it whatever you like
-
-@app.route("/")
-def home():
-    try:
-        db.command("ping")  # Test if MongoDB connection works
-        return {"message": "✅ MongoDB connected successfully!"}
-    except Exception as e:
-        return {"error": str(e)}
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
-
-
 from flask import Flask, request, jsonify, Response, send_from_directory
 from flask_cors import CORS
 from collections import Counter
 from functools import wraps
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
+from pymongo import MongoClient
+from bson.objectid import ObjectId
 
 # ------------------------------
 # Flask App Setup
@@ -41,7 +17,12 @@ from sklearn.linear_model import LogisticRegression
 app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)
 
-DB_FILE = os.path.join(os.path.dirname(__file__), "activity_data.db")
+# MongoDB connection (Render uses environment variable)
+MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://dhayalan:dhayalan@05@cluster0.mongodb.net/?retryWrites=true&w=majority")
+client = MongoClient(MONGO_URI)
+db = client["activity_db"]
+records_col = db["records"]
+
 MODEL_FILE = os.path.join(os.path.dirname(__file__), "url_model.pkl")
 VECT_FILE = os.path.join(os.path.dirname(__file__), "vectorizer.pkl")
 CAT_MODEL_FILE = os.path.join(os.path.dirname(__file__), "cat_model.pkl")
@@ -49,30 +30,6 @@ CAT_VECT_FILE = os.path.join(os.path.dirname(__file__), "cat_vectorizer.pkl")
 
 ADMIN_USER = "admin"
 ADMIN_PASS = "myStrongPassword123"
-
-# ------------------------------
-# Database Setup
-# ------------------------------
-def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS records (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            browser TEXT,
-            url TEXT,
-            title TEXT,
-            timestamp TEXT,
-            system_name TEXT,
-            lab_name TEXT,
-            category TEXT,
-            flagged INTEGER DEFAULT 0
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-init_db()
 
 # ------------------------------
 # Authentication
@@ -94,18 +51,14 @@ def requires_auth(f):
 # ============================================================
 def train_model():
     """Retrains models for flag prediction and category prediction."""
-    conn = sqlite3.connect(DB_FILE)
-    cur = conn.cursor()
-    cur.execute("SELECT url, flagged, category FROM records")
-    rows = cur.fetchall()
-    conn.close()
+    rows = list(records_col.find({}, {"url": 1, "flagged": 1, "category": 1, "_id": 0}))
 
     if not rows:
         return
 
-    urls = [r[0] for r in rows]
-    flags = np.array([r[1] for r in rows])
-    categories = [r[2] for r in rows if r[2]]
+    urls = [r["url"] for r in rows if "url" in r]
+    flags = np.array([r.get("flagged", 0) for r in rows])
+    categories = [r["category"] for r in rows if r.get("category")]
 
     # Flag Prediction Model
     vectorizer = TfidfVectorizer(max_features=500)
@@ -115,7 +68,7 @@ def train_model():
     joblib.dump(flag_model, MODEL_FILE)
     joblib.dump(vectorizer, VECT_FILE)
 
-    # Category Prediction Model retrains automatically from DB too
+    # Category Prediction Model
     if len(set(categories)) > 1:
         cat_vectorizer = TfidfVectorizer(max_features=800)
         X_cat = cat_vectorizer.fit_transform(urls)
@@ -127,7 +80,6 @@ def train_model():
     print(f"✅ ML retrained: {len(urls)} samples")
 
 def predict_flag(url):
-    """Predict whether a URL should be flagged."""
     if not os.path.exists(MODEL_FILE) or not os.path.exists(VECT_FILE):
         return 0
     model = joblib.load(MODEL_FILE)
@@ -136,7 +88,6 @@ def predict_flag(url):
     return int(model.predict(X)[0])
 
 def predict_category(url):
-    """Predict category of the URL."""
     try:
         if not os.path.exists(CAT_MODEL_FILE) or not os.path.exists(CAT_VECT_FILE):
             print("⚠️ Category model not found — retraining...")
@@ -144,7 +95,6 @@ def predict_category(url):
             if os.path.exists(csv_path):
                 train_from_csv(csv_path)
             else:
-                print("⚠️ CSV not found, cannot retrain category model.")
                 return "Uncategorized"
 
         model = joblib.load(CAT_MODEL_FILE)
@@ -157,63 +107,49 @@ def predict_category(url):
         return "Uncategorized"
 
 # ------------------------------
-# DB helpers
+# DB helpers (Mongo version)
 # ------------------------------
 def insert_records(records):
     """Insert new browsing records, predicting category + flag using ML."""
-    conn = sqlite3.connect(DB_FILE)
-    cur = conn.cursor()
+    docs = []
     for r in records:
         url = r.get("url", "")
         predicted_flag = predict_flag(url)
         predicted_cat = r.get("category", "") or predict_category(url)
-        cur.execute("""
-            INSERT INTO records (browser,url,title,timestamp,system_name,lab_name,category,flagged)
-            VALUES (?,?,?,?,?,?,?,?)
-        """, (
-            r.get("browser",""),
-            url,
-            r.get("title",""),
-            r.get("timestamp",""),
-            r.get("system_name",""),
-            r.get("lab_name",""),
-            predicted_cat,
-            predicted_flag
-        ))
-    conn.commit()
-    conn.close()
+        docs.append({
+            "browser": r.get("browser", ""),
+            "url": url,
+            "title": r.get("title", ""),
+            "timestamp": r.get("timestamp", ""),
+            "system_name": r.get("system_name", ""),
+            "lab_name": r.get("lab_name", ""),
+            "category": predicted_cat,
+            "flagged": predicted_flag
+        })
+    if docs:
+        records_col.insert_many(docs)
 
 def fetch_records(date=None):
-    conn = sqlite3.connect(DB_FILE)
-    cur = conn.cursor()
-    query = "SELECT id,browser,url,title,timestamp,system_name,lab_name,category,flagged FROM records"
-    params = []
+    query = {}
     if date:
-        query += " WHERE date(timestamp)=?"
-        params.append(date)
-    cur.execute(query, params)
-    rows = cur.fetchall()
-    conn.close()
+        query["timestamp"] = {"$regex": f"^{date}"}
+    rows = list(records_col.find(query))
     return [
         {
-            "id": r[0],
-            "browser": r[1],
-            "url": r[2],
-            "title": r[3],
-            "timestamp": r[4],
-            "system_name": r[5],
-            "lab_name": r[6],
-            "category": r[7],
-            "flagged": r[8]
+            "id": str(r["_id"]),
+            "browser": r.get("browser", ""),
+            "url": r.get("url", ""),
+            "title": r.get("title", ""),
+            "timestamp": r.get("timestamp", ""),
+            "system_name": r.get("system_name", ""),
+            "lab_name": r.get("lab_name", ""),
+            "category": r.get("category", ""),
+            "flagged": r.get("flagged", 0)
         } for r in rows
     ]
 
 def update_flag(record_id, flagged):
-    conn = sqlite3.connect(DB_FILE)
-    cur = conn.cursor()
-    cur.execute("UPDATE records SET flagged=? WHERE id=?", (flagged, record_id))
-    conn.commit()
-    conn.close()
+    records_col.update_one({"_id": ObjectId(record_id)}, {"$set": {"flagged": flagged}})
 
 # ------------------------------
 # API Routes
@@ -224,7 +160,7 @@ def upload():
     if not data:
         return jsonify({"error": "no data"}), 400
     insert_records(data if isinstance(data, list) else [data])
-    return jsonify({"status":"ok"}), 200
+    return jsonify({"status": "ok"}), 200
 
 @app.route("/labs", methods=["GET"])
 @requires_auth
@@ -235,16 +171,16 @@ def get_labs():
         return jsonify({}), 200
     lab_map = {}
     for r in all_records:
-        lab = r.get("lab_name","Unknown Lab")
-        sys = r.get("system_name","Unknown System")
-        flag = r.get("flagged",0)
+        lab = r.get("lab_name", "Unknown Lab")
+        sys = r.get("system_name", "Unknown System")
+        flag = r.get("flagged", 0)
         lab_map.setdefault(lab, {}).setdefault(sys, 0)
         lab_map[lab][sys] = max(lab_map[lab][sys], flag)
     output = {
         lab: [{"system_name": s, "flagged": systems[s]} for s in systems]
         for lab, systems in lab_map.items()
     }
-    return jsonify(output),200
+    return jsonify(output), 200
 
 @app.route("/data", methods=["GET"])
 @requires_auth
@@ -273,63 +209,54 @@ def get_past_data():
 def flag_entry():
     rid = request.get_json(force=True).get("id")
     if rid is None:
-        return jsonify({"error":"missing id"}),400
+        return jsonify({"error": "missing id"}), 400
     update_flag(rid, 1)
     train_model()
-    return jsonify({"status":"ok"}),200
+    return jsonify({"status": "ok"}), 200
 
 @app.route("/unflag", methods=["POST"])
 @requires_auth
 def unflag_entry():
     rid = request.get_json(force=True).get("id")
     if rid is None:
-        return jsonify({"error":"missing id"}),400
+        return jsonify({"error": "missing id"}), 400
     update_flag(rid, 0)
     train_model()
-    return jsonify({"status":"ok"}),200
+    return jsonify({"status": "ok"}), 200
 
 @app.route('/')
 def dashboard():
     return send_from_directory(os.path.dirname(__file__), 'activity_monitor.html')
 
 # ------------------------------
-# Train Category Model from CSV (Auto on startup)
+# Train Category Model from CSV
 # ------------------------------
 def train_from_csv(csv_path):
-    """Train or retrain the category model from a CSV (url,title,category)."""
     if not os.path.exists(csv_path):
         print(f"❌ CSV not found at {csv_path}")
         return
-
     df = pd.read_csv(csv_path)
     if 'url' not in df.columns or 'category' not in df.columns:
         print("❌ CSV must contain 'url' and 'category' columns")
         return
-
-    # Ensure balanced dataset
     df = df.groupby('category').apply(lambda x: x.sample(min(len(x), 50))).reset_index(drop=True)
-
     urls = df['url'].astype(str).tolist()
     categories = df['category'].astype(str).tolist()
-
     cat_vectorizer = TfidfVectorizer(max_features=800)
     X_cat = cat_vectorizer.fit_transform(urls)
     cat_model = LogisticRegression(max_iter=800)
     cat_model.fit(X_cat, categories)
-
     joblib.dump(cat_model, CAT_MODEL_FILE)
     joblib.dump(cat_vectorizer, CAT_VECT_FILE)
-
     print(f"✅ Category model trained successfully on {len(urls)} samples from CSV.")
 
 # ------------------------------
 # Run Flask
 # ------------------------------
 if __name__ == "__main__":
-    init_db()
     csv_path = '/home/Dhayalan/url_dataset.csv'
     if os.path.exists(csv_path):
-        train_from_csv(csv_path)  # ✅ auto-train category model once at startup
+        train_from_csv(csv_path)
     else:
         print("⚠️ No CSV found, skipping category training")
     train_model()
