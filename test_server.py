@@ -3,6 +3,31 @@ import sqlite3
 import joblib
 import pandas as pd
 import numpy as np
+
+from flask import Flask
+from pymongo import MongoClient
+import os
+
+app = Flask(__name__)
+
+# Get MongoDB URI from Render environment variables
+MONGO_URI = os.environ.get("MONGO_URI")
+
+client = MongoClient(MONGO_URI)
+db = client["mydatabase"]  # You can name it whatever you like
+
+@app.route("/")
+def home():
+    try:
+        db.command("ping")  # Test if MongoDB connection works
+        return {"message": "✅ MongoDB connected successfully!"}
+    except Exception as e:
+        return {"error": str(e)}
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
+
+
 from flask import Flask, request, jsonify, Response, send_from_directory
 from flask_cors import CORS
 from collections import Counter
