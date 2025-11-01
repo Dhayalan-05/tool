@@ -5,3 +5,5 @@ numpy
 scikit-learn
 joblib
 gunicorn
+pymongo[srv]==3.12
+
