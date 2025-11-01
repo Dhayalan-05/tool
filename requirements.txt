@@ -1,3 +1,7 @@
-psutil
-requests
+Flask
+flask-cors
 pandas
+numpy
+scikit-learn
+joblib
+gunicorn
