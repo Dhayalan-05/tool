@@ -109,9 +109,17 @@ def predict_category(url):
 # MongoDB Helpers
 # ------------------------------
 def insert_records(records):
+    """Safely insert multiple records into MongoDB with predictions."""
+    if not records:
+        return
+    if not isinstance(records, list):
+        records = [records]
+
     docs = []
     for r in records:
         url = r.get("url", "")
+        if not url:
+            continue  # skip empty URLs
         predicted_flag = predict_flag(url)
         predicted_cat = r.get("category") or predict_category(url)
         docs.append({
@@ -125,7 +133,10 @@ def insert_records(records):
             "flagged": predicted_flag
         })
     if docs:
-        records_col.insert_many(docs)
+        try:
+            records_col.insert_many(docs)
+        except Exception as e:
+            print(f"Error inserting records: {e}")
 
 def fetch_records(date=None):
     query = {}
@@ -154,11 +165,16 @@ def update_flag(record_id, flagged):
 # ------------------------------
 @app.route("/upload", methods=["POST"])
 def upload():
-    data = request.get_json(force=True)
-    if not data:
-        return jsonify({"error": "no data"}), 400
-    insert_records(data if isinstance(data, list) else [data])
-    return jsonify({"status": "ok"}), 200
+    """Upload activity data safely to MongoDB."""
+    try:
+        data = request.get_json(force=True)
+        if not data:
+            return jsonify({"error": "no data provided"}), 400
+        insert_records(data)
+        return jsonify({"status": "ok"}), 200
+    except Exception as e:
+        print(f"Upload error: {e}")
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route("/labs", methods=["GET"])
 @requires_auth
