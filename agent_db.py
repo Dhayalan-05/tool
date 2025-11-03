@@ -13,9 +13,9 @@ import subprocess
 import psutil
 
 # --------- CONFIG ----------
-SERVER_URL = "https://tool.onrender.com/upload"  # ✅ Your Render URL
+SERVER_URL = "https://tool-jc5z.onrender.com/upload"
 AUTH_USER = "admin"
-AUTH_PASS = "myStrongPassword123"  # ✅ Must match your Render ADMIN_PASS
+AUTH_PASS = "myStrongPassword123"  # Must match your server ADMIN_PASS  # ✅ Must match your Render ADMIN_PASS
 
 SLEEP_INTERVAL = 300  # 5 minutes
 LAB_NAME = os.getenv("LAB_NAME", "Lab-1")
