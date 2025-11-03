@@ -434,6 +434,7 @@ def initialize_app():
 # Run Flask
 # ------------------------------
 if __name__ == "__main__":
+    # Initial setup
     load_models()
     if not _model_cache:
         train_model()
