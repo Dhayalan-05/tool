@@ -23,7 +23,7 @@ CORS(app)
 # Password: (dhayalan@05) -> %28dhayalan%4005%29
 MONGO_URI = os.getenv(
     "MONGO_URI",
-    "mongodb+srv://dhayalan:%28Dhayalan%2405%29@browser.uwvjryb.mongodb.net/?retryWrites=true&w=majority"
+    "mongodb+srv://dhayalan:%28Dhayalan%24%29@browser.uwvjryb.mongodb.net/?retryWrites=true&w=majority"
 )
 
 client = MongoClient(MONGO_URI)
