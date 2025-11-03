@@ -326,48 +326,58 @@ def upload():
 @app.route("/labs", methods=["GET"])
 @requires_auth
 def get_labs():
-    """Get lab and system overview"""
+    """Get lab and system overview - SIMPLIFIED VERSION"""
     try:
-        date = request.args.get("date")
+        logger.info("Labs endpoint called")
         
-        # Fix: Use regex for date matching
-        query = {}
-        if date:
-            query["timestamp"] = {"$regex": f"^{date}"}
-            
-        records = list(records_col.find(query).limit(5000)) if records_col else []
-        
-        if not records:
+        # Return empty if no database connection
+        if records_col is None:
+            logger.warning("No database connection in labs endpoint")
             return jsonify({})
         
+        # Get ALL records without date filter first
+        all_records = list(records_col.find().limit(1000))
+        logger.info(f"Found {len(all_records)} total records")
+        
+        if not all_records:
+            logger.info("No records found in database")
+            return jsonify({})
+        
+        # Build simple lab map
         lab_map = {}
-        for r in records:
-            lab = r.get("lab_name", "Unknown Lab")
-            sys = r.get("system_name", "Unknown System")
-            flag = r.get("flagged", 0)
+        for record in all_records:
+            lab_name = record.get("lab_name", "Unknown Lab")
+            system_name = record.get("system_name", "Unknown System")
+            flagged = record.get("flagged", 0)
             
-            if lab not in lab_map:
-                lab_map[lab] = {}
+            if lab_name not in lab_map:
+                lab_map[lab_name] = {}
             
-            if sys not in lab_map[lab]:
-                lab_map[lab][sys] = {
-                    "system_name": sys,
-                    "flagged": flag,
+            if system_name not in lab_map[lab_name]:
+                lab_map[lab_name][system_name] = {
+                    "system_name": system_name,
+                    "flagged": flagged,
                     "total_visits": 0
                 }
             
-            lab_map[lab][sys]["total_visits"] += 1
-            lab_map[lab][sys]["flagged"] = max(lab_map[lab][sys]["flagged"], flag)
+            lab_map[lab_name][system_name]["total_visits"] += 1
+            # Keep the highest flag value
+            lab_map[lab_name][system_name]["flagged"] = max(
+                lab_map[lab_name][system_name]["flagged"], 
+                flagged
+            )
         
+        # Convert to required format
         result = {}
-        for lab, systems in lab_map.items():
-            result[lab] = list(systems.values())
-            
+        for lab_name, systems in lab_map.items():
+            result[lab_name] = list(systems.values())
+        
+        logger.info(f"Returning {len(result)} labs")
         return jsonify(result)
         
     except Exception as e:
-        logger.error(f"Labs endpoint error: {e}")
-        return jsonify({"error": "Internal server error"}), 500
+        logger.error(f"Labs endpoint failed: {str(e)}", exc_info=True)
+        return jsonify({"error": "Server error"}), 500
 
 @app.route("/data", methods=["GET"])
 @requires_auth
