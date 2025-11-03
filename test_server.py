@@ -24,38 +24,41 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ------------------------------
-# Configuration - ✅ SECURE VERSION
+# Configuration
 # ------------------------------
 MONGO_URI = os.getenv("MONGO_URI")
 ADMIN_USER = os.getenv("ADMIN_USER", "admin")
 ADMIN_PASS = os.getenv("ADMIN_PASS")
 
-# Validation
-if not MONGO_URI:
-    raise ValueError("❌ MONGO_URI environment variable is required")
-if not ADMIN_PASS:
-    raise ValueError("❌ ADMIN_PASS environment variable is required")
-
 # ------------------------------
-# MongoDB connection
+# MongoDB connection with error handling
 # ------------------------------
 try:
-    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-    client.admin.command('ismaster')
-    db = client["activity_db"]
-    records_col = db["records"]
-    logger.info("✅ MongoDB connected successfully")
-except ConnectionFailure as e:
-    logger.error(f"❌ MongoDB connection failed: {e}")
-    raise
-
-# Create indexes
-try:
-    records_col.create_index([("timestamp", -1)])
-    records_col.create_index([("lab_name", 1), ("system_name", 1)])
-    logger.info("✅ Database indexes created")
+    if MONGO_URI:
+        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        client.admin.command('ping')  # Simple test command
+        db = client["activity_db"]
+        records_col = db["records"]
+        logger.info("✅ MongoDB connected successfully")
+    else:
+        client = None
+        db = None
+        records_col = None
+        logger.warning("❌ MONGO_URI not set")
 except Exception as e:
-    logger.warning(f"Index creation warning: {e}")
+    logger.error(f"❌ MongoDB connection failed: {e}")
+    client = None
+    db = None
+    records_col = None
+
+# Create indexes if connected
+if records_col:
+    try:
+        records_col.create_index([("timestamp", -1)])
+        records_col.create_index([("lab_name", 1), ("system_name", 1)])
+        logger.info("✅ Database indexes created")
+    except Exception as e:
+        logger.warning(f"Index creation warning: {e}")
 
 # ------------------------------
 # ML Model Files
@@ -107,6 +110,10 @@ def load_models():
 
 def train_model():
     """Retrain models for flag prediction and category prediction."""
+    if not records_col:
+        logger.warning("Cannot train model: No database connection")
+        return
+        
     try:
         cutoff_date = datetime.utcnow() - timedelta(days=30)
         
@@ -180,6 +187,10 @@ def predict_category(url):
 # ------------------------------
 def insert_records(records):
     """Safely insert multiple records into MongoDB with predictions."""
+    if not records_col:
+        logger.error("No database connection")
+        return 0
+        
     if not records or not isinstance(records, list):
         return 0
 
@@ -229,6 +240,9 @@ def insert_records(records):
 
 def fetch_records(date=None, limit=1000):
     """Fetch records with optional date filter"""
+    if not records_col:
+        return []
+        
     try:
         query = {}
         if date:
@@ -256,6 +270,9 @@ def fetch_records(date=None, limit=1000):
 
 def update_flag(record_id, flagged):
     """Update record flag status"""
+    if not records_col:
+        return False
+        
     try:
         result = records_col.update_one(
             {"_id": ObjectId(record_id)}, 
@@ -286,9 +303,10 @@ def upload():
         inserted_count = insert_records(data)
         
         if inserted_count > 0:
-            total_count = records_col.count_documents({})
-            if total_count % 1000 < inserted_count:
-                train_model()
+            if records_col:
+                total_count = records_col.count_documents({})
+                if total_count % 1000 < inserted_count:
+                    train_model()
         
         return jsonify({
             "status": "success", 
@@ -397,13 +415,19 @@ def unflag_entry():
 def health_check():
     """Health check endpoint"""
     try:
-        client.admin.command('ismaster')
+        if client:
+            client.admin.command('ping')
+            db_status = "connected"
+            records_count = records_col.count_documents({}) if records_col else 0
+        else:
+            db_status = "disconnected"
+            records_count = 0
         
         stats = {
-            "status": "healthy",
-            "database": "connected",
+            "status": "healthy" if client else "unhealthy",
+            "database": db_status,
             "timestamp": datetime.utcnow().isoformat(),
-            "records_count": records_col.count_documents({}),
+            "records_count": records_count,
             "models_loaded": {
                 "flag_model": bool(_model_cache.get('flag_model')),
                 "category_model": bool(_model_cache.get('cat_model'))
@@ -412,7 +436,11 @@ def health_check():
         return jsonify(stats)
     except Exception as e:
         logger.error(f"Health check failed: {e}")
-        return jsonify({"status": "unhealthy", "error": str(e)}), 500
+        return jsonify({
+            "status": "unhealthy", 
+            "error": str(e),
+            "database": "connection_failed"
+        }), 500
 
 @app.route('/')
 def dashboard():
@@ -427,7 +455,7 @@ def initialize_app():
     """Initialize application on first request"""
     logger.info("Initializing application...")
     load_models()
-    if not _model_cache:
+    if not _model_cache and client:
         train_model()
 
 # ------------------------------
@@ -436,7 +464,7 @@ def initialize_app():
 if __name__ == "__main__":
     # Initial setup
     load_models()
-    if not _model_cache:
+    if not _model_cache and client:
         train_model()
     
     port = int(os.environ.get("PORT", 10000))
