@@ -1,4 +1,4 @@
-# Required packages: pip install requests psutil scikit-learn joblib pymongo
+# Required packages: pip install requests psutil scikit-learn joblib
 
 import os
 import sqlite3
@@ -6,18 +6,18 @@ import time
 import socket
 import requests
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import pathlib
 import subprocess
 import psutil
 
 # --------- CONFIG ----------
-SERVER_URL = "https://tool.onrender.com/upload" # ✅ Change to your actual Render URL
+SERVER_URL = "https://tool.onrender.com/upload"  # ✅ Your Render URL
 AUTH_USER = "admin"
-AUTH_PASS = "myStrongPassword123"  # ✅ Change to match your server
+AUTH_PASS = "myStrongPassword123"  # ✅ Must match your Render ADMIN_PASS
 
-SLEEP_INTERVAL = 300  # 5 minutes to avoid rate limits
+SLEEP_INTERVAL = 300  # 5 minutes
 LAB_NAME = os.getenv("LAB_NAME", "Lab-1")
 SYSTEM_NAME = socket.gethostname()
 ALLOWED_DOMAINS = ["110.172.151.102", "your-portal-domain.com"]
@@ -273,7 +273,7 @@ def save_buffer(data):
         print(f"[Agent] Error saving buffer: {e}")
 
 # ---------- UPLOAD SYSTEM ----------
-def send_to_server(records, chunk_size=200):  # Reduced chunk size for stability
+def send_to_server(records, chunk_size=200):
     if not records:
         print("[Agent] No records to send")
         return
@@ -368,7 +368,7 @@ def main():
             break
         except Exception as e:
             print(f"[Agent] Error in main loop: {e}")
-            time.sleep(SLEEP_INTERVAL)  # Continue on error
+            time.sleep(SLEEP_INTERVAL)
 
 if __name__ == "__main__":
     main()
