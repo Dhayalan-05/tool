@@ -250,13 +250,8 @@ def fetch_records(date=None, limit=1000):
     try:
         query = {}
         if date:
-            # Match records from the specific date
-            start_date = datetime.strptime(date, "%Y-%m-%d")
-            end_date = start_date + timedelta(days=1)
-            query["timestamp"] = {
-                "$gte": start_date.isoformat(),
-                "$lt": end_date.isoformat()
-            }
+            # Fix: Use regex to match the date part of ISO timestamp
+            query["timestamp"] = {"$regex": f"^{date}"}
         
         cursor = records_col.find(query).sort("timestamp", -1).limit(limit)
         rows = list(cursor)
