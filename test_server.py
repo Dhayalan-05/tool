@@ -55,7 +55,7 @@ except Exception as e:
     records_col = None
 
 # Create indexes if connected
-if records_col:
+if records_col is not None:  # FIXED: Use 'is not None'
     try:
         records_col.create_index([("timestamp", -1)])
         records_col.create_index([("lab_name", 1), ("system_name", 1)])
@@ -113,7 +113,7 @@ def load_models():
 
 def train_model():
     """Retrain models for flag prediction and category prediction."""
-    if not records_col:
+    if records_col is None:  # FIXED: Use 'is None'
         logger.warning("Cannot train model: No database connection")
         return
         
@@ -190,7 +190,7 @@ def predict_category(url):
 # ------------------------------
 def insert_records(records):
     """Safely insert multiple records into MongoDB with predictions."""
-    if not records_col:
+    if records_col is None:  # FIXED: Use 'is None'
         logger.error("No database connection")
         return 0
         
@@ -243,7 +243,7 @@ def insert_records(records):
 
 def fetch_records(date=None, limit=1000):
     """Fetch records with optional date filter"""
-    if not records_col:
+    if records_col is None:  # FIXED: Use 'is None'
         return []
         
     try:
@@ -273,7 +273,7 @@ def fetch_records(date=None, limit=1000):
 
 def update_flag(record_id, flagged):
     """Update record flag status"""
-    if not records_col:
+    if records_col is None:  # FIXED: Use 'is None'
         return False
         
     try:
@@ -306,7 +306,7 @@ def upload():
         inserted_count = insert_records(data)
         
         if inserted_count > 0:
-            if records_col:
+            if records_col is not None:  # FIXED: Use 'is not None'
                 total_count = records_col.count_documents({})
                 if total_count % 1000 < inserted_count:
                     train_model()
@@ -418,16 +418,16 @@ def unflag_entry():
 def health_check():
     """Health check endpoint"""
     try:
-        if client:
+        if client is not None:  # FIXED: Use 'is not None'
             client.admin.command('ping')
             db_status = "connected"
-            records_count = records_col.count_documents({}) if records_col else 0
+            records_count = records_col.count_documents({}) if records_col is not None else 0
         else:
             db_status = "disconnected"
             records_count = 0
         
         stats = {
-            "status": "healthy" if client else "unhealthy",
+            "status": "healthy" if client is not None else "unhealthy",
             "database": db_status,
             "timestamp": datetime.utcnow().isoformat(),
             "records_count": records_count,
@@ -451,13 +451,13 @@ def dashboard():
     return send_from_directory(os.path.dirname(__file__), 'activity_monitor.html')
 
 # ------------------------------
-# Application Startup - FIXED VERSION
+# Application Startup
 # ------------------------------
 def initialize_app():
     """Initialize application on startup"""
     logger.info("Initializing application...")
     load_models()
-    if not _model_cache and client:
+    if not _model_cache and client is not None:  # FIXED: Use 'is not None'
         train_model()
 
 # Initialize immediately
