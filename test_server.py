@@ -329,7 +329,13 @@ def get_labs():
     """Get lab and system overview"""
     try:
         date = request.args.get("date")
-        records = fetch_records(date, limit=5000)
+        
+        # Fix: Use regex for date matching
+        query = {}
+        if date:
+            query["timestamp"] = {"$regex": f"^{date}"}
+            
+        records = list(records_col.find(query).limit(5000)) if records_col else []
         
         if not records:
             return jsonify({})
