@@ -13,7 +13,7 @@ import subprocess
 import psutil
 
 # --------- CONFIG ----------
-SERVER_URL = "https://your-render-app.onrender.com/upload"  # ✅ Change to your actual Render URL
+SERVER_URL = "https://tool.onrender.com/upload" # ✅ Change to your actual Render URL
 AUTH_USER = "admin"
 AUTH_PASS = "myStrongPassword123"  # ✅ Change to match your server
 
