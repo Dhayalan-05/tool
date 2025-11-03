@@ -8,6 +8,7 @@ from functools import wraps
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from pymongo import MongoClient
+from pymongo.server_api import ServerApi
 from bson.objectid import ObjectId
 from datetime import datetime, timedelta
 import logging
@@ -33,17 +34,19 @@ ADMIN_PASS = os.getenv("ADMIN_PASS")
 # ------------------------------
 # MongoDB connection with error handling
 # ------------------------------
+client = None
+db = None
+records_col = None
+
 try:
     if MONGO_URI:
-        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        # Use the correct MongoDB connection format
+        client = MongoClient(MONGO_URI, server_api=ServerApi('1'), serverSelectionTimeoutMS=5000)
         client.admin.command('ping')  # Simple test command
         db = client["activity_db"]
         records_col = db["records"]
         logger.info("✅ MongoDB connected successfully")
     else:
-        client = None
-        db = None
-        records_col = None
         logger.warning("❌ MONGO_URI not set")
 except Exception as e:
     logger.error(f"❌ MongoDB connection failed: {e}")
