@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # ------------------------------
 # Configuration
 # ------------------------------
-MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://dhayalan:your_password@browser.uwvjryb.mongodb.net/?retryWrites=true&w=majority")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://dhayalan:%28dhayalan%29@browser.uwvjryb.mongodb.net/?retryWrites=true&w=majority")
 ADMIN_USER = os.getenv("ADMIN_USER", "admin")
 ADMIN_PASS = os.getenv("ADMIN_PASS", "myStrongPassword123")
 
