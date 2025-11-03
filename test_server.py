@@ -24,18 +24,23 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ------------------------------
-# Configuration
+# Configuration - ✅ SECURE VERSION
 # ------------------------------
-MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://dhayalan:%28dhayalan%29@browser.uwvjryb.mongodb.net/?retryWrites=true&w=majority")
+MONGO_URI = os.getenv("MONGO_URI")
 ADMIN_USER = os.getenv("ADMIN_USER", "admin")
-ADMIN_PASS = os.getenv("ADMIN_PASS", "myStrongPassword123")
+ADMIN_PASS = os.getenv("ADMIN_PASS")
+
+# Validation
+if not MONGO_URI:
+    raise ValueError("❌ MONGO_URI environment variable is required")
+if not ADMIN_PASS:
+    raise ValueError("❌ ADMIN_PASS environment variable is required")
 
 # ------------------------------
-# MongoDB connection with error handling
+# MongoDB connection
 # ------------------------------
 try:
     client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-    # Test connection
     client.admin.command('ismaster')
     db = client["activity_db"]
     records_col = db["records"]
@@ -44,7 +49,7 @@ except ConnectionFailure as e:
     logger.error(f"❌ MongoDB connection failed: {e}")
     raise
 
-# Create index for better performance
+# Create indexes
 try:
     records_col.create_index([("timestamp", -1)])
     records_col.create_index([("lab_name", 1), ("system_name", 1)])
@@ -103,7 +108,6 @@ def load_models():
 def train_model():
     """Retrain models for flag prediction and category prediction."""
     try:
-        # Get recent data for training (last 30 days)
         cutoff_date = datetime.utcnow() - timedelta(days=30)
         
         rows = list(records_col.find({
@@ -120,7 +124,7 @@ def train_model():
         categories = [r.get("category", "Uncategorized") for r in rows]
 
         # Flag prediction model
-        if len(set(flags)) > 1:  # Ensure we have both classes
+        if len(set(flags)) > 1:
             vectorizer = TfidfVectorizer(max_features=1000, stop_words='english', ngram_range=(1, 2))
             X = vectorizer.fit_transform(urls)
             flag_model = LogisticRegression(max_iter=1000, class_weight='balanced')
@@ -142,7 +146,6 @@ def train_model():
             joblib.dump(cat_vectorizer, CAT_VECT_FILE)
             logger.info(f"✅ Category model trained on {len(urls)} samples, {len(unique_cats)} categories")
         
-        # Reload models into cache
         load_models()
         
     except Exception as e:
@@ -189,11 +192,9 @@ def insert_records(records):
             if not url or len(url) < 5:
                 continue
 
-            # Use existing category or predict new one
             existing_category = r.get("category", "").strip()
             predicted_cat = existing_category if existing_category else predict_category(url)
             
-            # Use existing flag or predict new one
             existing_flag = r.get("flagged", 0)
             predicted_flag = existing_flag if existing_flag in [0, 1] else predict_flag(url)
             
@@ -284,11 +285,9 @@ def upload():
         
         inserted_count = insert_records(data)
         
-        # Retrain models periodically (every 1000 new records)
         if inserted_count > 0:
-            # Simple heuristic: retrain after significant new data
             total_count = records_col.count_documents({})
-            if total_count % 1000 < inserted_count:  # Rough retrain trigger
+            if total_count % 1000 < inserted_count:
                 train_model()
         
         return jsonify({
@@ -331,7 +330,6 @@ def get_labs():
             lab_map[lab][sys]["total_visits"] += 1
             lab_map[lab][sys]["flagged"] = max(lab_map[lab][sys]["flagged"], flag)
         
-        # Convert to required format
         result = {}
         for lab, systems in lab_map.items():
             result[lab] = list(systems.values())
@@ -366,7 +364,7 @@ def flag_entry():
         
         success = update_flag(data["id"], 1)
         if success:
-            train_model()  # Retrain with new flag data
+            train_model()
             return jsonify({"status": "ok"})
         else:
             return jsonify({"error": "Record not found"}), 404
@@ -386,7 +384,7 @@ def unflag_entry():
         
         success = update_flag(data["id"], 0)
         if success:
-            train_model()  # Retrain with updated data
+            train_model()
             return jsonify({"status": "ok"})
         else:
             return jsonify({"error": "Record not found"}), 404
@@ -399,7 +397,6 @@ def unflag_entry():
 def health_check():
     """Health check endpoint"""
     try:
-        # Test MongoDB connection
         client.admin.command('ismaster')
         
         stats = {
@@ -437,7 +434,6 @@ def initialize_app():
 # Run Flask
 # ------------------------------
 if __name__ == "__main__":
-    # Initial setup
     load_models()
     if not _model_cache:
         train_model()
