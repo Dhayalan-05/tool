@@ -451,25 +451,22 @@ def dashboard():
     return send_from_directory(os.path.dirname(__file__), 'activity_monitor.html')
 
 # ------------------------------
-# Application Startup
+# Application Startup - FIXED VERSION
 # ------------------------------
-@app.before_first_request
 def initialize_app():
-    """Initialize application on first request"""
+    """Initialize application on startup"""
     logger.info("Initializing application...")
     load_models()
     if not _model_cache and client:
         train_model()
 
+# Initialize immediately
+initialize_app()
+
 # ------------------------------
 # Run Flask
 # ------------------------------
 if __name__ == "__main__":
-    # Initial setup
-    load_models()
-    if not _model_cache and client:
-        train_model()
-    
     port = int(os.environ.get("PORT", 10000))
     debug = os.environ.get("FLASK_ENV") == "development"
     
