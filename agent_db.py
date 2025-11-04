@@ -184,14 +184,17 @@ def extract_history(db_path, browser_name):
         conn = sqlite3.connect(temp)
         cur = conn.cursor()
         
+        # Get today's date for filtering
+        today = datetime.now().date()
+        
         # Try Chrome/Edge/Brave schema first
         try:
-            cur.execute("SELECT url, title, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 500")  # Reduced limit
+            cur.execute("SELECT url, title, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 500")
             rows = cur.fetchall()
         except sqlite3.OperationalError:
             # Try Firefox schema
             try:
-                cur.execute("SELECT url, title, last_visit_date FROM moz_places ORDER BY last_visit_date DESC LIMIT 500")  # Reduced limit
+                cur.execute("SELECT url, title, last_visit_date FROM moz_places ORDER BY last_visit_date DESC LIMIT 500")
                 rows = cur.fetchall()
             except sqlite3.OperationalError:
                 rows = []
@@ -212,11 +215,18 @@ def extract_history(db_path, browser_name):
             try:
                 if r[2] and r[2] > 10000000000000000:  # Chrome timestamp
                     ts = datetime(1601, 1, 1) + timedelta(microseconds=r[2])
+                    record_date = ts.date()
                     timestamp = ts.isoformat()
                 else:
+                    record_date = datetime.now().date()
                     timestamp = datetime.utcnow().isoformat()
             except:
+                record_date = datetime.now().date()
                 timestamp = datetime.utcnow().isoformat()
+            
+            # ✅ FILTER: Only send today's data
+            if record_date != today:
+                continue
             
             category = classify_text(f"{title} {url}")
             flagged = 0
@@ -228,15 +238,19 @@ def extract_history(db_path, browser_name):
                 if any(keyword in url.lower() for keyword in suspicious_keywords):
                     flagged = 1
             
+            # ✅ FIXED: Map to correct field names expected by the server/dashboard
             out.append({
-                "browser": browser_name,
-                "url": url[:500],
-                "title": title[:500],
-                "timestamp": timestamp,
-                "system_name": SYSTEM_NAME,
-                "lab_name": LAB_NAME,
+                "id": f"{browser_name}_{hash(url) & 0xFFFFFFFF}",  # Add unique ID
+                "lab_name": LAB_NAME,  # Must match dashboard field
+                "system_name": SYSTEM_NAME,  # Must match dashboard field
+                "user_name": browser_name.split('_')[1] if '_' in browser_name else "Unknown",  # Extract username from browser key
                 "category": category,
-                "flagged": flagged
+                "url": url[:500],
+                "timestamp": timestamp,
+                "flagged": flagged,
+                # Keep original for debugging
+                "browser": browser_name,
+                "title": title[:500]
             })
             
     except Exception as e:
@@ -286,15 +300,34 @@ def test_visibility():
             if data:
                 latest_time = data[0].get('timestamp', 'Unknown')[:19]
                 print(f"[Agent] 📅 Latest record: {latest_time}")
+                # Print sample record to verify structure
+                sample = data[0]
+                print(f"[Agent] 🔍 Sample record: Lab={sample.get('lab_name')}, System={sample.get('system_name')}, User={sample.get('user_name')}")
+            else:
+                print("[Agent] ❌ No records visible in dashboard")
+        else:
+            print(f"[Agent] ❌ Server returned {response.status_code}")
     except Exception as e:
         print(f"[Agent] ❌ Visibility test failed: {e}")
 
-def send_to_server(records, chunk_size=50):  # Reduced chunk size for real-time
+def send_to_server(records, chunk_size=50):
     if not records:
         print("[Agent] No records to send")
         return
         
-    all_records = load_buffer() + records
+    # Filter buffer to only include today's data
+    today = datetime.now().date().isoformat()
+    buffered_records = load_buffer()
+    
+    # Filter buffer to keep only today's data
+    filtered_buffer = [r for r in buffered_records if r.get('timestamp', '').startswith(today)]
+    
+    # If we filtered out old buffer data, save the cleaned buffer
+    if len(filtered_buffer) != len(buffered_records):
+        print(f"[Agent] Cleaned buffer: removed {len(buffered_records) - len(filtered_buffer)} old records")
+        save_buffer(filtered_buffer)
+    
+    all_records = filtered_buffer + records
     total = len(all_records)
     sent = 0
     
@@ -305,10 +338,14 @@ def send_to_server(records, chunk_size=50):  # Reduced chunk size for real-time
         try:
             print(f"[Agent] Sending chunk {sent//chunk_size + 1}...")
             
+            # Debug: Print first record structure
+            if sent == 0 and chunk:
+                print(f"[Agent] 🧪 First record structure: {json.dumps(chunk[0], indent=2)}")
+            
             response = requests.post(
                 SERVER_URL,
                 json=chunk,
-                timeout=45,  # Increased timeout
+                timeout=45,
                 auth=(AUTH_USER, AUTH_PASS),
                 headers={'Content-Type': 'application/json'}
             )
@@ -318,7 +355,7 @@ def send_to_server(records, chunk_size=50):  # Reduced chunk size for real-time
                 sent += len(chunk)
                 
                 # Quick test to verify data is visible every few chunks
-                if sent % 100 == 0:  # Every 100 records
+                if sent % 100 == 0:
                     test_visibility()
                     
             else:
@@ -328,7 +365,6 @@ def send_to_server(records, chunk_size=50):  # Reduced chunk size for real-time
                 
         except requests.exceptions.Timeout:
             print(f"[Agent] ⚠ Timeout, reducing chunk size...")
-            # Reduce chunk size on timeout
             chunk_size = max(20, chunk_size // 2)
             save_buffer(all_records[sent:])
             return
@@ -347,12 +383,18 @@ def send_to_server(records, chunk_size=50):  # Reduced chunk size for real-time
         print("[Agent] ✅ Buffer cleared")
     
     # Final visibility test
+    print("[Agent] 🎯 Final visibility test...")
     test_visibility()
 
 # ---------- MAIN LOOP ----------
 def main():
     print(f"=== Agent Started ===\nSystem: {SYSTEM_NAME}\nLab: {LAB_NAME}")
     print(f"Target: {SERVER_URL}")
+    print(f"📅 MODE: Only sending TODAY'S data ({datetime.now().date()})")
+    
+    # Initial visibility test
+    print("[Agent] 🔍 Initial dashboard visibility test...")
+    test_visibility()
     
     iteration = 0
     while True:
@@ -370,20 +412,20 @@ def main():
             for bname, path in browsers.items():
                 records = extract_history(path, bname)
                 aggregated.extend(records)
-                print(f"[Agent] Extracted {len(records)} records from {bname}")
+                print(f"[Agent] Extracted {len(records)} TODAY'S records from {bname}")
             
-            print(f"[Agent] Total collected: {len(aggregated)} records")
+            print(f"[Agent] Total TODAY'S records collected: {len(aggregated)}")
             
             # Send to server
             if aggregated:
                 send_to_server(aggregated)
             else:
-                print("[Agent] No new records to send")
+                print("[Agent] No new TODAY'S records to send")
             
             # Check buffer size
             buffer_size = len(load_buffer())
             if buffer_size > 0:
-                print(f"[Agent] ⚠ Unsent records in buffer: {buffer_size}")
+                print(f"[Agent] ⚠ Unsent TODAY'S records in buffer: {buffer_size}")
             
             iteration += 1
             print(f"[Agent] Waiting {SLEEP_INTERVAL} seconds...")
