@@ -244,27 +244,46 @@ let selectedLab = "";
 let selectedSystem = "";
 let selectedUser = "";
 
-function showLoading() { document.getElementById("loadingOverlay").style.display = "flex"; }
-function hideLoading() { document.getElementById("loadingOverlay").style.display = "none"; }
+function showLoading() { 
+    console.log("Showing loading...");
+    document.getElementById("loadingOverlay").style.display = "flex"; 
+}
+function hideLoading() { 
+    console.log("Hiding loading...");
+    document.getElementById("loadingOverlay").style.display = "none"; 
+}
 
 document.addEventListener("DOMContentLoaded", () => {
-    loadLiveData();
-    setInterval(loadLiveData, 5000);
+    console.log("Dashboard loaded - starting data refresh");
     // Set today's date by default
     const today = new Date().toISOString().split('T')[0];
     document.getElementById("datePicker").value = today;
     selectedDate = today;
-    loadLabs(today);
+    
+    loadLiveData();
+    setInterval(loadLiveData, 10000); // Refresh every 10 seconds
 });
 
 async function loadLiveData() {
+    console.log("Loading live data...");
     try {
         const res = await axios.get("/data", {
             auth: { username: "admin", password: "myStrongPassword123" }
         });
         allData = res.data || [];
+        console.log("Loaded data:", allData.length, "records");
+        
         updateSummaryCards();
-        updateSelectionSummary();
+        
+        // Auto-load labs if date is selected but labs aren't loaded yet
+        if (selectedDate && Object.keys(labs).length === 0) {
+            console.log("Auto-loading labs for date:", selectedDate);
+            loadLabs(selectedDate);
+        } else if (selectedDate || selectedLab || selectedSystem || selectedUser) {
+            // Re-apply current filters
+            filterAndRender();
+        }
+        
     } catch (err) {
         console.error("Error fetching data:", err);
     }
@@ -310,24 +329,37 @@ function updateSelectionSummary() {
 
 function onDateChange() {
     selectedDate = document.getElementById("datePicker").value;
+    console.log("Date changed to:", selectedDate);
     updateFlagIndicators();
-    if (!selectedDate) return;
+    if (!selectedDate) {
+        // Clear other filters if date is cleared
+        clearFilters();
+        return;
+    }
     loadLabs(selectedDate);
 }
 
 async function loadLabs(date) {
+    console.log("Loading labs for date:", date);
     showLoading();
     try {
         const res = await axios.get(`/labs?date=${date}`, {
             auth: { username: "admin", password: "myStrongPassword123" }
         });
         labs = res.data || {};
+        console.log("Labs loaded:", Object.keys(labs).length, "labs");
+        
         const labSelect = document.getElementById("labSelect");
         labSelect.innerHTML = `<option value="">-- Select Lab --</option>`;
         
         if (Object.keys(labs).length === 0) {
-            alert("No labs have data on this date.");
+            console.log("No labs found for date:", date);
             labSelect.disabled = true;
+            document.getElementById("systemSelect").disabled = true;
+            document.getElementById("userSelect").disabled = true;
+            // Clear any existing display
+            document.getElementById("chartContainer").style.display = "none";
+            document.getElementById("dataTableContainer").style.display = "none";
             hideLoading();
             return;
         }
@@ -345,6 +377,15 @@ async function loadLabs(date) {
         document.getElementById("systemSelect").disabled = true;
         document.getElementById("userSelect").disabled = true;
         updateFlagIndicators();
+        
+        // Auto-select first lab if only one exists
+        if (Object.keys(labs).length === 1) {
+            const firstLab = Object.keys(labs)[0];
+            labSelect.value = firstLab;
+            selectedLab = firstLab;
+            onLabChange();
+        }
+        
     } catch (err) {
         console.error("Error loading labs:", err);
     } finally {
@@ -354,6 +395,7 @@ async function loadLabs(date) {
 
 function onLabChange() {
     selectedLab = document.getElementById("labSelect").value;
+    console.log("Lab changed to:", selectedLab);
     const systemSelect = document.getElementById("systemSelect");
     systemSelect.innerHTML = `<option value="">-- Select System --</option>`;
     
@@ -375,17 +417,33 @@ function onLabChange() {
     systemSelect.disabled = false;
     document.getElementById("userSelect").disabled = true;
     updateFlagIndicators();
+    
+    // Auto-select first system if only one exists
+    if (labs[selectedLab].length === 1) {
+        const firstSystem = labs[selectedLab][0].system_name;
+        systemSelect.value = firstSystem;
+        selectedSystem = firstSystem;
+        onSystemChange();
+    }
 }
 
 function onSystemChange() {
     selectedSystem = document.getElementById("systemSelect").value;
-    if (!selectedSystem) return;
+    console.log("System changed to:", selectedSystem);
+    
+    if (!selectedSystem) {
+        document.getElementById("userSelect").disabled = true;
+        updateFlagIndicators();
+        return;
+    }
 
     // Populate user dropdown dynamically
     const users = [...new Set(allData
         .filter(r => r.lab_name === selectedLab && r.system_name === selectedSystem)
         .map(r => r.user_name || 'Unknown')
     )];
+    
+    console.log("Found users:", users);
     
     const userSelect = document.getElementById("userSelect");
     userSelect.innerHTML = `<option value="">-- Select User --</option>`;
@@ -407,11 +465,14 @@ function onSystemChange() {
     
     userSelect.disabled = users.length === 0;
     updateFlagIndicators();
+    
+    // Auto-render when system is selected
     filterAndRender();
 }
 
 function onUserChange() {
     selectedUser = document.getElementById("userSelect").value;
+    console.log("User changed to:", selectedUser);
     updateFlagIndicators();
     filterAndRender();
 }
@@ -451,27 +512,39 @@ function getFilteredData() {
     if (selectedLab) dataToShow = dataToShow.filter(r => r.lab_name === selectedLab);
     if (selectedSystem) dataToShow = dataToShow.filter(r => r.system_name === selectedSystem);
     if (selectedUser) dataToShow = dataToShow.filter(r => r.user_name === selectedUser);
+    
+    console.log("Filtered data:", {
+        total: allData.length,
+        filtered: dataToShow.length,
+        filters: { selectedDate, selectedLab, selectedSystem, selectedUser }
+    });
+    
     return dataToShow;
 }
 
 function filterAndRender() {
+    console.log("Applying filters and rendering...");
     const dataToShow = getFilteredData();
+    console.log("Filtered data count:", dataToShow.length); // Debug
     
     if (dataToShow.length > 0) {
+        console.log("Showing chart and table with", dataToShow.length, "records");
         document.getElementById("chartContainer").style.display = "block";
         document.getElementById("dataTableContainer").style.display = "block";
+        renderChart(dataToShow);
+        renderTable(dataToShow);
     } else {
+        console.log("No data to display - hiding chart and table");
         document.getElementById("chartContainer").style.display = "none";
         document.getElementById("dataTableContainer").style.display = "none";
     }
-
-    renderChart(dataToShow);
-    renderTable(dataToShow);
+    
     updateSelectionSummary();
     updateFlagIndicators();
 }
 
 function clearFilters() {
+    console.log("Clearing all filters");
     selectedDate = "";
     selectedLab = "";
     selectedSystem = "";
@@ -486,24 +559,23 @@ function clearFilters() {
     document.getElementById("systemSelect").disabled = true;
     document.getElementById("userSelect").disabled = true;
     
+    // Show all data when filters are cleared
+    document.getElementById("chartContainer").style.display = "block";
+    document.getElementById("dataTableContainer").style.display = "block";
+    
     updateFlagIndicators();
     filterAndRender();
 }
 
 function toggleTable() {
     const tableDiv = document.getElementById("dataTableContainer");
-    const chartDiv = document.getElementById("chartContainer");
     tableDiv.style.display = tableDiv.style.display === "none" ? "block" : "none";
+    console.log("Table toggled, display:", tableDiv.style.display);
 }
 
 function reloadData() { 
+    console.log("Manual refresh triggered");
     loadLiveData(); 
-    // Re-apply current filters after reload
-    setTimeout(() => {
-        if (selectedDate || selectedLab || selectedSystem || selectedUser) {
-            filterAndRender();
-        }
-    }, 1000);
 }
 
 function openPastDataModal() {
@@ -597,7 +669,7 @@ async function toggleFlag(id, flagged) {
     }
 }
 
-// Past data modal functions (unchanged)
+// Past data modal functions
 async function onPastDateChange() {
     const date = document.getElementById("pastDate").value;
     if (!date) return;
