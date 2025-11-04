@@ -25,8 +25,28 @@ body {
 .flagged-row {
     background-color: #ffb3b3 !important;
 }
-
-/* Loading Spinner */
+.flag-indicator {
+    color: #dc3545;
+    margin-left: 5px;
+    font-size: 14px;
+}
+.flag-badge {
+    background-color: #dc3545;
+    color: white;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    margin-left: 5px;
+}
+.status-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
 #loadingOverlay {
     position: fixed;
     top: 0;
@@ -43,6 +63,22 @@ body {
     width: 4rem;
     height: 4rem;
 }
+.summary-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 15px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+.summary-number {
+    font-size: 2.5rem;
+    font-weight: bold;
+    margin: 0;
+}
+.summary-label {
+    font-size: 0.9rem;
+    opacity: 0.9;
+}
 </style>
 </head>
 <body class="p-4">
@@ -57,22 +93,64 @@ body {
 <div class="container text-center">
     <h2 class="mb-3 text-primary">📊 Activity Monitoring Dashboard</h2>
 
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="summary-card">
+                <p class="summary-number" id="totalRecords">0</p>
+                <p class="summary-label">Total Records</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="summary-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                <p class="summary-number" id="flaggedRecords">0</p>
+                <p class="summary-label">Flagged Items</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="summary-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                <p class="summary-number" id="totalLabs">0</p>
+                <p class="summary-label">Active Labs</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="summary-card" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+                <p class="summary-number" id="totalSystems">0</p>
+                <p class="summary-label">Active Systems</p>
+            </div>
+        </div>
+    </div>
+
     <!-- Filters -->
     <div class="row justify-content-center mb-3">
         <div class="col-md-3">
-            <label class="form-label fw-bold">Select Date:</label>
+            <label class="form-label fw-bold">Select Date: 
+                <span id="dateFlag" class="flag-indicator" style="display: none;">🚩</span>
+            </label>
             <input type="date" id="datePicker" class="form-control" onchange="onDateChange()">
         </div>
         <div class="col-md-3">
-            <label class="form-label fw-bold">Select Lab:</label>
+            <label class="form-label fw-bold">Select Lab:
+                <span id="labFlag" class="flag-indicator" style="display: none;">🚩</span>
+            </label>
             <select id="labSelect" class="form-select" onchange="onLabChange()" disabled>
                 <option value="">-- Select Lab --</option>
             </select>
         </div>
         <div class="col-md-3">
-            <label class="form-label fw-bold">Select System:</label>
+            <label class="form-label fw-bold">Select System:
+                <span id="systemFlag" class="flag-indicator" style="display: none;">🚩</span>
+            </label>
             <select id="systemSelect" class="form-select" onchange="onSystemChange()" disabled>
                 <option value="">-- Select System --</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label fw-bold">Select User:
+                <span id="userFlag" class="flag-indicator" style="display: none;">🚩</span>
+            </label>
+            <select id="userSelect" class="form-select" onchange="onUserChange()" disabled>
+                <option value="">-- Select User --</option>
             </select>
         </div>
     </div>
@@ -82,6 +160,17 @@ body {
         <button class="btn btn-success me-2" onclick="toggleTable()">Show Raw Data</button>
         <button class="btn btn-secondary me-2" onclick="reloadData()">🔄 Refresh Live Data</button>
         <button class="btn btn-info" onclick="openPastDataModal()">📅 Past Data</button>
+        <button class="btn btn-warning" onclick="clearFilters()">🗑️ Clear Filters</button>
+    </div>
+
+    <!-- Current Selection Summary -->
+    <div class="alert alert-info mb-4" id="selectionSummary" style="display: none;">
+        <strong>Current Selection:</strong> 
+        <span id="selectedDateText"></span> | 
+        <span id="selectedLabText"></span> | 
+        <span id="selectedSystemText"></span> | 
+        <span id="selectedUserText"></span>
+        <span class="badge bg-danger ms-2" id="flaggedCountBadge" style="display: none;"></span>
     </div>
 
     <!-- Chart -->
@@ -100,6 +189,7 @@ body {
                         <th>ID</th>
                         <th>Lab</th>
                         <th>System</th>
+                        <th>User</th>
                         <th>Category</th>
                         <th>URL</th>
                         <th>Timestamp</th>
@@ -152,17 +242,19 @@ let labs = {};
 let selectedDate = "";
 let selectedLab = "";
 let selectedSystem = "";
+let selectedUser = "";
 
-function showLoading() {
-    document.getElementById("loadingOverlay").style.display = "flex";
-}
-function hideLoading() {
-    document.getElementById("loadingOverlay").style.display = "none";
-}
+function showLoading() { document.getElementById("loadingOverlay").style.display = "flex"; }
+function hideLoading() { document.getElementById("loadingOverlay").style.display = "none"; }
 
 document.addEventListener("DOMContentLoaded", () => {
     loadLiveData();
     setInterval(loadLiveData, 5000);
+    // Set today's date by default
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById("datePicker").value = today;
+    selectedDate = today;
+    loadLabs(today);
 });
 
 async function loadLiveData() {
@@ -171,13 +263,54 @@ async function loadLiveData() {
             auth: { username: "admin", password: "myStrongPassword123" }
         });
         allData = res.data || [];
+        updateSummaryCards();
+        updateSelectionSummary();
     } catch (err) {
         console.error("Error fetching data:", err);
     }
 }
 
+function updateSummaryCards() {
+    document.getElementById("totalRecords").textContent = allData.length;
+    
+    const flaggedCount = allData.filter(r => r.flagged === 1).length;
+    document.getElementById("flaggedRecords").textContent = flaggedCount;
+    
+    const uniqueLabs = new Set(allData.map(r => r.lab_name));
+    document.getElementById("totalLabs").textContent = uniqueLabs.size;
+    
+    const uniqueSystems = new Set(allData.map(r => r.system_name));
+    document.getElementById("totalSystems").textContent = uniqueSystems.size;
+}
+
+function updateSelectionSummary() {
+    const summary = document.getElementById("selectionSummary");
+    const currentData = getFilteredData();
+    
+    if (currentData.length > 0) {
+        document.getElementById("selectedDateText").textContent = selectedDate || "All Dates";
+        document.getElementById("selectedLabText").textContent = selectedLab || "All Labs";
+        document.getElementById("selectedSystemText").textContent = selectedSystem || "All Systems";
+        document.getElementById("selectedUserText").textContent = selectedUser || "All Users";
+        
+        const flaggedCount = currentData.filter(r => r.flagged === 1).length;
+        const flaggedBadge = document.getElementById("flaggedCountBadge");
+        if (flaggedCount > 0) {
+            flaggedBadge.textContent = `${flaggedCount} Flagged`;
+            flaggedBadge.style.display = "inline";
+        } else {
+            flaggedBadge.style.display = "none";
+        }
+        
+        summary.style.display = "block";
+    } else {
+        summary.style.display = "none";
+    }
+}
+
 function onDateChange() {
     selectedDate = document.getElementById("datePicker").value;
+    updateFlagIndicators();
     if (!selectedDate) return;
     loadLabs(selectedDate);
 }
@@ -191,20 +324,27 @@ async function loadLabs(date) {
         labs = res.data || {};
         const labSelect = document.getElementById("labSelect");
         labSelect.innerHTML = `<option value="">-- Select Lab --</option>`;
+        
         if (Object.keys(labs).length === 0) {
             alert("No labs have data on this date.");
             labSelect.disabled = true;
             hideLoading();
             return;
         }
+        
         Object.keys(labs).forEach(lab => {
             const opt = document.createElement("option");
             opt.value = lab;
-            opt.textContent = lab;
+            const hasFlagged = labs[lab].some(sys => sys.flagged === 1);
+            opt.textContent = lab + (hasFlagged ? " 🚩" : "");
+            opt.dataset.flagged = hasFlagged;
             labSelect.appendChild(opt);
         });
+        
         labSelect.disabled = false;
         document.getElementById("systemSelect").disabled = true;
+        document.getElementById("userSelect").disabled = true;
+        updateFlagIndicators();
     } catch (err) {
         console.error("Error loading labs:", err);
     } finally {
@@ -216,39 +356,154 @@ function onLabChange() {
     selectedLab = document.getElementById("labSelect").value;
     const systemSelect = document.getElementById("systemSelect");
     systemSelect.innerHTML = `<option value="">-- Select System --</option>`;
+    
     if (!selectedLab || !labs[selectedLab]) {
         systemSelect.disabled = true;
+        document.getElementById("userSelect").disabled = true;
+        updateFlagIndicators();
         return;
     }
+    
     labs[selectedLab].forEach(sys => {
         const opt = document.createElement("option");
         opt.value = sys.system_name;
-        opt.textContent = sys.system_name;
+        opt.textContent = sys.system_name + (sys.flagged === 1 ? " 🚩" : "");
+        opt.dataset.flagged = sys.flagged === 1;
         systemSelect.appendChild(opt);
     });
+    
     systemSelect.disabled = false;
+    document.getElementById("userSelect").disabled = true;
+    updateFlagIndicators();
 }
 
 function onSystemChange() {
     selectedSystem = document.getElementById("systemSelect").value;
     if (!selectedSystem) return;
+
+    // Populate user dropdown dynamically
+    const users = [...new Set(allData
+        .filter(r => r.lab_name === selectedLab && r.system_name === selectedSystem)
+        .map(r => r.user_name || 'Unknown')
+    )];
+    
+    const userSelect = document.getElementById("userSelect");
+    userSelect.innerHTML = `<option value="">-- Select User --</option>`;
+    
+    users.forEach(u => {
+        const opt = document.createElement("option");
+        opt.value = u;
+        // Check if user has any flagged items
+        const userFlagged = allData.some(r => 
+            r.lab_name === selectedLab && 
+            r.system_name === selectedSystem && 
+            r.user_name === u && 
+            r.flagged === 1
+        );
+        opt.textContent = u + (userFlagged ? " 🚩" : "");
+        opt.dataset.flagged = userFlagged;
+        userSelect.appendChild(opt);
+    });
+    
+    userSelect.disabled = users.length === 0;
+    updateFlagIndicators();
+    filterAndRender();
+}
+
+function onUserChange() {
+    selectedUser = document.getElementById("userSelect").value;
+    updateFlagIndicators();
+    filterAndRender();
+}
+
+function updateFlagIndicators() {
+    // Update flag indicators based on current selection
+    const dateFlag = document.getElementById("dateFlag");
+    const labFlag = document.getElementById("labFlag");
+    const systemFlag = document.getElementById("systemFlag");
+    const userFlag = document.getElementById("userFlag");
+    
+    // Date flag - show if any data for this date has flags
+    const dateHasFlags = selectedDate && allData.some(r => 
+        r.timestamp.startsWith(selectedDate) && r.flagged === 1
+    );
+    dateFlag.style.display = dateHasFlags ? "inline" : "none";
+    
+    // Lab flag
+    const labHasFlags = selectedLab && labs[selectedLab] && 
+        labs[selectedLab].some(sys => sys.flagged === 1);
+    labFlag.style.display = labHasFlags ? "inline" : "none";
+    
+    // System flag
+    const systemOption = document.querySelector(`#systemSelect option[value="${selectedSystem}"]`);
+    const systemHasFlags = systemOption && systemOption.dataset.flagged === "true";
+    systemFlag.style.display = systemHasFlags ? "inline" : "none";
+    
+    // User flag
+    const userOption = document.querySelector(`#userSelect option[value="${selectedUser}"]`);
+    const userHasFlags = userOption && userOption.dataset.flagged === "true";
+    userFlag.style.display = userHasFlags ? "inline" : "none";
+}
+
+function getFilteredData() {
+    let dataToShow = allData;
+    if (selectedDate) dataToShow = dataToShow.filter(r => r.timestamp.startsWith(selectedDate));
+    if (selectedLab) dataToShow = dataToShow.filter(r => r.lab_name === selectedLab);
+    if (selectedSystem) dataToShow = dataToShow.filter(r => r.system_name === selectedSystem);
+    if (selectedUser) dataToShow = dataToShow.filter(r => r.user_name === selectedUser);
+    return dataToShow;
+}
+
+function filterAndRender() {
+    const dataToShow = getFilteredData();
+    
+    if (dataToShow.length > 0) {
+        document.getElementById("chartContainer").style.display = "block";
+        document.getElementById("dataTableContainer").style.display = "block";
+    } else {
+        document.getElementById("chartContainer").style.display = "none";
+        document.getElementById("dataTableContainer").style.display = "none";
+    }
+
+    renderChart(dataToShow);
+    renderTable(dataToShow);
+    updateSelectionSummary();
+    updateFlagIndicators();
+}
+
+function clearFilters() {
+    selectedDate = "";
+    selectedLab = "";
+    selectedSystem = "";
+    selectedUser = "";
+    
+    document.getElementById("datePicker").value = "";
+    document.getElementById("labSelect").value = "";
+    document.getElementById("systemSelect").value = "";
+    document.getElementById("userSelect").value = "";
+    
+    document.getElementById("labSelect").disabled = true;
+    document.getElementById("systemSelect").disabled = true;
+    document.getElementById("userSelect").disabled = true;
+    
+    updateFlagIndicators();
     filterAndRender();
 }
 
 function toggleTable() {
     const tableDiv = document.getElementById("dataTableContainer");
     const chartDiv = document.getElementById("chartContainer");
-    if (tableDiv.style.display === "none") {
-        tableDiv.style.display = "block";
-        chartDiv.style.transform = "translateY(-20px)";
-    } else {
-        tableDiv.style.display = "none";
-        chartDiv.style.transform = "translateY(0)";
-    }
+    tableDiv.style.display = tableDiv.style.display === "none" ? "block" : "none";
 }
 
-function reloadData() {
-    loadLiveData();
+function reloadData() { 
+    loadLiveData(); 
+    // Re-apply current filters after reload
+    setTimeout(() => {
+        if (selectedDate || selectedLab || selectedSystem || selectedUser) {
+            filterAndRender();
+        }
+    }, 1000);
 }
 
 function openPastDataModal() {
@@ -256,6 +511,93 @@ function openPastDataModal() {
     modal.show();
 }
 
+function renderChart(data) {
+    const ctx = document.getElementById('activityChart').getContext('2d');
+    const categoryCount = {};
+    data.forEach(r => {
+        if (r.category) categoryCount[r.category] = (categoryCount[r.category] || 0) + 1;
+    });
+    const labels = Object.keys(categoryCount);
+    const values = Object.values(categoryCount);
+    if (chart) chart.destroy();
+    chart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: labels.length ? labels : ["No Data"],
+            datasets: [{
+                data: values.length ? values : [1],
+                backgroundColor: ['#36a2eb','#ff6384','#ff9f40','#4bc0c0','#9966ff','#ffcd56','#c9cbcf','#4dc9f6','#f67019','#537bc4'],
+                borderWidth: 1
+            }]
+        },
+        options: { 
+            responsive: true, 
+            animation: { animateScale: true },
+            plugins: {
+                legend: {
+                    position: 'right',
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.label || '';
+                            const value = context.raw || 0;
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = Math.round((value / total) * 100);
+                            return `${label}: ${value} (${percentage}%)`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderTable(data) {
+    const body = document.getElementById("dataBody");
+    body.innerHTML = "";
+    data.forEach(r => {
+        const tr = document.createElement("tr");
+        if (r.flagged === 1) tr.classList.add("flagged-row");
+        tr.innerHTML = `
+            <td>${r.id}</td>
+            <td>${r.lab_name}</td>
+            <td>${r.system_name}</td>
+            <td>${r.user_name || '-'}</td>
+            <td>${r.category}</td>
+            <td><a href="${r.url}" target="_blank">${r.url.substring(0, 50)}${r.url.length > 50 ? '...' : ''}</a></td>
+            <td>${new Date(r.timestamp).toLocaleString()}</td>
+            <td>
+                <button class="btn btn-sm ${r.flagged ? 'btn-warning' : 'btn-outline-danger'}"
+                    onclick="toggleFlag('${r.id}', ${r.flagged})">
+                    ${r.flagged ? '🚩 Unflag' : 'Flag'}
+                </button>
+            </td>
+        `;
+        body.appendChild(tr);
+    });
+}
+
+async function toggleFlag(id, flagged) {
+    showLoading();
+    const endpoint = flagged ? "/unflag" : "/flag";
+    try {
+        await axios.post(endpoint, { id }, {
+            auth: { username: "admin", password: "myStrongPassword123" }
+        });
+        // Reload data to reflect changes
+        await loadLiveData();
+        // Re-apply current filters
+        filterAndRender();
+    } catch (err) {
+        console.error("Error toggling flag:", err);
+        alert("Error updating flag status");
+    } finally {
+        hideLoading();
+    }
+}
+
+// Past data modal functions (unchanged)
 async function onPastDateChange() {
     const date = document.getElementById("pastDate").value;
     if (!date) return;
@@ -325,10 +667,15 @@ async function fetchPastData() {
             document.getElementById("chartContainer").style.display = "none";
             document.getElementById("dataTableContainer").style.display = "none";
         } else {
-            renderChart(allData);
-            renderTable(allData);
-            document.getElementById("chartContainer").style.display = "block";
-            document.getElementById("dataTableContainer").style.display = "block";
+            // Set the filters
+            selectedDate = date;
+            selectedLab = lab;
+            selectedSystem = system;
+            document.getElementById("datePicker").value = date;
+            document.getElementById("labSelect").value = lab;
+            document.getElementById("systemSelect").value = system;
+            updateFlagIndicators();
+            filterAndRender();
         }
         bootstrap.Modal.getInstance(document.getElementById("pastDataModal")).hide();
     } catch (err) {
@@ -336,83 +683,6 @@ async function fetchPastData() {
     } finally {
         hideLoading();
     }
-}
-
-function filterAndRender() {
-    let dataToShow = allData;
-    if (selectedDate) dataToShow = dataToShow.filter(r => r.timestamp.startsWith(selectedDate));
-    if (selectedLab) dataToShow = dataToShow.filter(r => r.lab_name === selectedLab);
-    if (selectedSystem) dataToShow = dataToShow.filter(r => r.system_name === selectedSystem);
-
-    if (dataToShow.length > 0) {
-        document.getElementById("chartContainer").style.display = "block";
-        document.getElementById("dataTableContainer").style.display = "block";
-    } else {
-        document.getElementById("chartContainer").style.display = "none";
-        document.getElementById("dataTableContainer").style.display = "none";
-        alert("No data available for this date/lab/system.");
-    }
-
-    renderChart(dataToShow);
-    renderTable(dataToShow);
-}
-
-function renderChart(data) {
-    const ctx = document.getElementById('activityChart').getContext('2d');
-    const categoryCount = {};
-    data.forEach(r => {
-        if (r.category) categoryCount[r.category] = (categoryCount[r.category] || 0) + 1;
-    });
-    const labels = Object.keys(categoryCount);
-    const values = Object.values(categoryCount);
-
-    if (chart) chart.destroy();
-    chart = new Chart(ctx, {
-        type: 'pie',
-        data: {
-            labels: labels.length ? labels : ["No Data"],
-            datasets: [{
-                data: values.length ? values : [1],
-                backgroundColor: ['#36a2eb','#ff6384','#ff9f40','#4bc0c0','#9966ff'],
-                borderWidth: 1
-            }]
-        },
-        options: { responsive: true, animation: { animateScale: true } }
-    });
-}
-
-function renderTable(data) {
-    const body = document.getElementById("dataBody");
-    body.innerHTML = "";
-    data.forEach(r => {
-        const tr = document.createElement("tr");
-        if (r.flagged === 1) tr.classList.add("flagged-row");
-        tr.innerHTML = `
-            <td>${r.id}</td>
-            <td>${r.lab_name}</td>
-            <td>${r.system_name}</td>
-            <td>${r.category}</td>
-            <td><a href="${r.url}" target="_blank">${r.url}</a></td>
-            <td>${r.timestamp}</td>
-            <td>
-                <button class="btn btn-sm ${r.flagged ? 'btn-warning' : 'btn-outline-danger'}"
-                    onclick="toggleFlag(${r.id}, ${r.flagged})">
-                    ${r.flagged ? 'Unflag' : 'Flag'}
-                </button>
-            </td>
-        `;
-        body.appendChild(tr);
-    });
-}
-
-async function toggleFlag(id, flagged) {
-    showLoading();
-    const endpoint = flagged ? "/unflag" : "/flag";
-    await axios.post(endpoint, { id }, {
-        auth: { username: "admin", password: "myStrongPassword123" }
-    });
-    hideLoading();
-    reloadData();
 }
 </script>
 </body>
