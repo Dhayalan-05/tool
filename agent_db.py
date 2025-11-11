@@ -240,17 +240,16 @@ def extract_history(db_path, browser_name):
             
             # ✅ FIXED: Map to correct field names expected by the server/dashboard
             out.append({
-                "id": f"{browser_name}_{hash(url) & 0xFFFFFFFF}",  # Add unique ID
-                "lab_name": LAB_NAME,  # Must match dashboard field
-                "system_name": SYSTEM_NAME,  # Must match dashboard field
-                "user_name": browser_name.split('_')[1] if '_' in browser_name else "Unknown",  # Extract username from browser key
-                "category": category,
+                "lab_name": LAB_NAME,
+                "system_name": SYSTEM_NAME,
+                "browser": browser_name.split('_')[0],  # Extract browser type
                 "url": url[:500],
+                "title": title[:500],
                 "timestamp": timestamp,
+                "category": category,
                 "flagged": flagged,
-                # Keep original for debugging
-                "browser": browser_name,
-                "title": title[:500]
+                # Add user_name for the dashboard
+                "user_name": browser_name.split('_')[1] if '_' in browser_name else "Unknown"
             })
             
     except Exception as e:
