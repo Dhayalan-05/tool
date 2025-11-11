@@ -222,6 +222,7 @@ def insert_records(records):
                 "lab_name": r.get("lab_name", "Unknown")[:100],
                 "category": predicted_cat[:50],
                 "flagged": predicted_flag,
+                "user_name": r.get("user_name", "Unknown")[:100],
                 "created_at": datetime.utcnow()
             }
             docs.append(doc)
@@ -266,7 +267,8 @@ def fetch_records(date=None, limit=1000):
                 "system_name": r.get("system_name", ""),
                 "lab_name": r.get("lab_name", ""),
                 "category": r.get("category", ""),
-                "flagged": r.get("flagged", 0)
+                "flagged": r.get("flagged", 0),
+                "user_name": r.get("user_name", "Unknown")
             } for r in rows
         ]
     except Exception as e:
@@ -326,28 +328,34 @@ def upload():
 @app.route("/labs", methods=["GET"])
 @requires_auth
 def get_labs():
-    """Get lab and system overview - SIMPLIFIED VERSION"""
+    """Get lab and system overview - IMPROVED VERSION"""
     try:
-        logger.info("Labs endpoint called")
+        date_filter = request.args.get("date")
+        logger.info(f"Labs endpoint called with date: {date_filter}")
         
-        # Return empty if no database connection
         if records_col is None:
             logger.warning("No database connection in labs endpoint")
             return jsonify({})
         
-        # Get ALL records without date filter first
-        all_records = list(records_col.find().limit(1000))
-        logger.info(f"Found {len(all_records)} total records")
+        # Build query with date filter
+        query = {}
+        if date_filter:
+            query["timestamp"] = {"$regex": f"^{date_filter}"}
         
-        if not all_records:
-            logger.info("No records found in database")
+        # Get records with the date filter
+        records = list(records_col.find(query).limit(5000))
+        logger.info(f"Found {len(records)} records for date: {date_filter}")
+        
+        if not records:
+            logger.info("No records found in database for the given filters")
             return jsonify({})
         
-        # Build simple lab map
+        # Build comprehensive lab map
         lab_map = {}
-        for record in all_records:
+        for record in records:
             lab_name = record.get("lab_name", "Unknown Lab")
             system_name = record.get("system_name", "Unknown System")
+            user_name = record.get("user_name", "Unknown User")
             flagged = record.get("flagged", 0)
             
             if lab_name not in lab_map:
@@ -357,22 +365,27 @@ def get_labs():
                 lab_map[lab_name][system_name] = {
                     "system_name": system_name,
                     "flagged": flagged,
-                    "total_visits": 0
+                    "total_visits": 0,
+                    "users": set()
                 }
             
             lab_map[lab_name][system_name]["total_visits"] += 1
-            # Keep the highest flag value
             lab_map[lab_name][system_name]["flagged"] = max(
                 lab_map[lab_name][system_name]["flagged"], 
                 flagged
             )
+            lab_map[lab_name][system_name]["users"].add(user_name)
         
-        # Convert to required format
+        # Convert to required format and convert sets to lists
         result = {}
         for lab_name, systems in lab_map.items():
-            result[lab_name] = list(systems.values())
+            system_list = []
+            for system_data in systems.values():
+                system_data["users"] = list(system_data["users"])
+                system_list.append(system_data)
+            result[lab_name] = system_list
         
-        logger.info(f"Returning {len(result)} labs")
+        logger.info(f"Returning {len(result)} labs with systems")
         return jsonify(result)
         
     except Exception as e:
@@ -385,7 +398,7 @@ def get_data():
     """Get recent activity data"""
     try:
         date = request.args.get("date")
-        limit = int(request.args.get("limit", 50))
+        limit = int(request.args.get("limit", 1000))
         records = fetch_records(date, limit=limit)
         return jsonify(records)
     except Exception as e:
