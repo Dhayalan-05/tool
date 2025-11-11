@@ -79,6 +79,13 @@ body {
     font-size: 0.9rem;
     opacity: 0.9;
 }
+.filter-section {
+    background: white;
+    border-radius: 10px;
+    padding: 15px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
 </style>
 </head>
 <body class="p-4">
@@ -121,37 +128,40 @@ body {
         </div>
     </div>
 
-    <!-- Filters -->
-    <div class="row justify-content-center mb-3">
-        <div class="col-md-3">
-            <label class="form-label fw-bold">Select Date: 
-                <span id="dateFlag" class="flag-indicator" style="display: none;">🚩</span>
-            </label>
-            <input type="date" id="datePicker" class="form-control" onchange="onDateChange()">
-        </div>
-        <div class="col-md-3">
-            <label class="form-label fw-bold">Select Lab:
-                <span id="labFlag" class="flag-indicator" style="display: none;">🚩</span>
-            </label>
-            <select id="labSelect" class="form-select" onchange="onLabChange()" disabled>
-                <option value="">-- Select Lab --</option>
-            </select>
-        </div>
-        <div class="col-md-3">
-            <label class="form-label fw-bold">Select System:
-                <span id="systemFlag" class="flag-indicator" style="display: none;">🚩</span>
-            </label>
-            <select id="systemSelect" class="form-select" onchange="onSystemChange()" disabled>
-                <option value="">-- Select System --</option>
-            </select>
-        </div>
-        <div class="col-md-3">
-            <label class="form-label fw-bold">Select User:
-                <span id="userFlag" class="flag-indicator" style="display: none;">🚩</span>
-            </label>
-            <select id="userSelect" class="form-select" onchange="onUserChange()" disabled>
-                <option value="">-- Select User --</option>
-            </select>
+    <!-- Filters Section -->
+    <div class="filter-section">
+        <h5 class="mb-3">🔍 Filter Data</h5>
+        <div class="row justify-content-center">
+            <div class="col-md-3">
+                <label class="form-label fw-bold">Select Date: 
+                    <span id="dateFlag" class="flag-indicator" style="display: none;">🚩</span>
+                </label>
+                <input type="date" id="datePicker" class="form-control" onchange="onDateChange()">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-bold">Select Lab:
+                    <span id="labFlag" class="flag-indicator" style="display: none;">🚩</span>
+                </label>
+                <select id="labSelect" class="form-select" onchange="onLabChange()" disabled>
+                    <option value="">-- Select Lab --</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-bold">Select System:
+                    <span id="systemFlag" class="flag-indicator" style="display: none;">🚩</span>
+                </label>
+                <select id="systemSelect" class="form-select" onchange="onSystemChange()" disabled>
+                    <option value="">-- Select System --</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-bold">Select User:
+                    <span id="userFlag" class="flag-indicator" style="display: none;">🚩</span>
+                </label>
+                <select id="userSelect" class="form-select" onchange="onUserChange()" disabled>
+                    <option value="">-- Select User --</option>
+                </select>
+            </div>
         </div>
     </div>
 
@@ -161,6 +171,7 @@ body {
         <button class="btn btn-secondary me-2" onclick="reloadData()">🔄 Refresh Live Data</button>
         <button class="btn btn-info" onclick="openPastDataModal()">📅 Past Data</button>
         <button class="btn btn-warning" onclick="clearFilters()">🗑️ Clear Filters</button>
+        <button class="btn btn-primary" onclick="applyFilters()">✅ Apply Filters</button>
     </div>
 
     <!-- Current Selection Summary -->
@@ -171,6 +182,11 @@ body {
         <span id="selectedSystemText"></span> | 
         <span id="selectedUserText"></span>
         <span class="badge bg-danger ms-2" id="flaggedCountBadge" style="display: none;"></span>
+    </div>
+
+    <!-- No Data Message -->
+    <div class="alert alert-warning mb-4" id="noDataMessage" style="display: none;">
+        <strong>⚠️ No data found</strong> for the selected filters. Please try different criteria.
     </div>
 
     <!-- Chart -->
@@ -224,6 +240,10 @@ body {
         <select id="pastSystem" class="form-select mb-3" disabled>
           <option value="">-- Choose System --</option>
         </select>
+
+        <div id="pastDataMessage" class="alert alert-info mt-3" style="display: none;">
+            <!-- Message will be shown here -->
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -243,6 +263,7 @@ let selectedDate = "";
 let selectedLab = "";
 let selectedSystem = "";
 let selectedUser = "";
+let filtersApplied = false;
 
 function showLoading() { 
     console.log("Showing loading...");
@@ -261,11 +282,12 @@ document.addEventListener("DOMContentLoaded", () => {
     selectedDate = today;
     
     loadLiveData();
-    setInterval(loadLiveData, 10000); // Refresh every 10 seconds
+    // Refresh only when user clicks refresh button, not automatically
 });
 
 async function loadLiveData() {
     console.log("Loading live data...");
+    showLoading();
     try {
         const res = await axios.get("/data", {
             auth: { username: "admin", password: "myStrongPassword123" }
@@ -275,17 +297,21 @@ async function loadLiveData() {
         
         updateSummaryCards();
         
-        // Auto-load labs if date is selected but labs aren't loaded yet
-        if (selectedDate && Object.keys(labs).length === 0) {
+        // Only auto-load labs if no filters are applied yet
+        if (selectedDate && !filtersApplied) {
             console.log("Auto-loading labs for date:", selectedDate);
-            loadLabs(selectedDate);
-        } else if (selectedDate || selectedLab || selectedSystem || selectedUser) {
-            // Re-apply current filters
-            filterAndRender();
+            await loadLabs(selectedDate);
+        }
+        
+        // If filters are applied, re-apply them
+        if (filtersApplied) {
+            applyFilters();
         }
         
     } catch (err) {
         console.error("Error fetching data:", err);
+    } finally {
+        hideLoading();
     }
 }
 
@@ -322,8 +348,10 @@ function updateSelectionSummary() {
         }
         
         summary.style.display = "block";
+        document.getElementById("noDataMessage").style.display = "none";
     } else {
         summary.style.display = "none";
+        document.getElementById("noDataMessage").style.display = "block";
     }
 }
 
@@ -331,11 +359,13 @@ function onDateChange() {
     selectedDate = document.getElementById("datePicker").value;
     console.log("Date changed to:", selectedDate);
     updateFlagIndicators();
+    
     if (!selectedDate) {
-        // Clear other filters if date is cleared
         clearFilters();
         return;
     }
+    
+    // Load labs for the selected date
     loadLabs(selectedDate);
 }
 
@@ -357,9 +387,13 @@ async function loadLabs(date) {
             labSelect.disabled = true;
             document.getElementById("systemSelect").disabled = true;
             document.getElementById("userSelect").disabled = true;
-            // Clear any existing display
+            
+            // Show no data message
             document.getElementById("chartContainer").style.display = "none";
             document.getElementById("dataTableContainer").style.display = "none";
+            document.getElementById("noDataMessage").style.display = "block";
+            document.getElementById("noDataMessage").innerHTML = `<strong>⚠️ No data found</strong> for date: ${date}. Please select a different date.`;
+            
             hideLoading();
             return;
         }
@@ -378,17 +412,10 @@ async function loadLabs(date) {
         document.getElementById("userSelect").disabled = true;
         updateFlagIndicators();
         
-        // Auto-select first lab if only one exists
-        if (Object.keys(labs).length === 1) {
-            const firstLab = Object.keys(labs)[0];
-            labSelect.value = firstLab;
-            selectedLab = firstLab;
-            onLabChange();
-        }
+        hideLoading();
         
     } catch (err) {
         console.error("Error loading labs:", err);
-    } finally {
         hideLoading();
     }
 }
@@ -417,14 +444,6 @@ function onLabChange() {
     systemSelect.disabled = false;
     document.getElementById("userSelect").disabled = true;
     updateFlagIndicators();
-    
-    // Auto-select first system if only one exists
-    if (labs[selectedLab].length === 1) {
-        const firstSystem = labs[selectedLab][0].system_name;
-        systemSelect.value = firstSystem;
-        selectedSystem = firstSystem;
-        onSystemChange();
-    }
 }
 
 function onSystemChange() {
@@ -465,20 +484,130 @@ function onSystemChange() {
     
     userSelect.disabled = users.length === 0;
     updateFlagIndicators();
-    
-    // Auto-render when system is selected
-    filterAndRender();
 }
 
 function onUserChange() {
     selectedUser = document.getElementById("userSelect").value;
     console.log("User changed to:", selectedUser);
     updateFlagIndicators();
-    filterAndRender();
+}
+
+function applyFilters() {
+    console.log("Applying filters...");
+    filtersApplied = true;
+    
+    const dataToShow = getFilteredData();
+    console.log("Filtered data count:", dataToShow.length);
+    
+    if (dataToShow.length > 0) {
+        console.log("Showing chart and table with", dataToShow.length, "records");
+        document.getElementById("chartContainer").style.display = "block";
+        document.getElementById("dataTableContainer").style.display = "block";
+        document.getElementById("noDataMessage").style.display = "none";
+        renderChart(dataToShow);
+        renderTable(dataToShow);
+    } else {
+        console.log("No data to display - hiding chart and table");
+        document.getElementById("chartContainer").style.display = "none";
+        document.getElementById("dataTableContainer").style.display = "none";
+        document.getElementById("noDataMessage").style.display = "block";
+        document.getElementById("noDataMessage").innerHTML = `<strong>⚠️ No data found</strong> for the selected filters. Please try different criteria.`;
+    }
+    
+    updateSelectionSummary();
+    updateFlagIndicators();
+}
+
+function getFilteredData() {
+    let dataToShow = allData;
+    
+    // Apply date filter
+    if (selectedDate) {
+        dataToShow = dataToShow.filter(r => r.timestamp.startsWith(selectedDate));
+    }
+    
+    // Apply lab filter
+    if (selectedLab) {
+        dataToShow = dataToShow.filter(r => r.lab_name === selectedLab);
+    }
+    
+    // Apply system filter
+    if (selectedSystem) {
+        dataToShow = dataToShow.filter(r => r.system_name === selectedSystem);
+    }
+    
+    // Apply user filter
+    if (selectedUser) {
+        dataToShow = dataToShow.filter(r => r.user_name === selectedUser);
+    }
+    
+    console.log("Filtered data:", {
+        total: allData.length,
+        filtered: dataToShow.length,
+        filters: { selectedDate, selectedLab, selectedSystem, selectedUser }
+    });
+    
+    return dataToShow;
+}
+
+function clearFilters() {
+    console.log("Clearing all filters");
+    selectedDate = "";
+    selectedLab = "";
+    selectedSystem = "";
+    selectedUser = "";
+    filtersApplied = false;
+    
+    document.getElementById("datePicker").value = "";
+    document.getElementById("labSelect").value = "";
+    document.getElementById("systemSelect").value = "";
+    document.getElementById("userSelect").value = "";
+    
+    document.getElementById("labSelect").disabled = true;
+    document.getElementById("systemSelect").disabled = true;
+    document.getElementById("userSelect").disabled = true;
+    
+    // Reset to show all data
+    document.getElementById("chartContainer").style.display = "block";
+    document.getElementById("dataTableContainer").style.display = "block";
+    document.getElementById("noDataMessage").style.display = "none";
+    
+    updateFlagIndicators();
+    
+    // Render all data
+    if (allData.length > 0) {
+        renderChart(allData);
+        renderTable(allData);
+    }
+    
+    updateSelectionSummary();
+}
+
+function toggleTable() {
+    const tableDiv = document.getElementById("dataTableContainer");
+    tableDiv.style.display = tableDiv.style.display === "none" ? "block" : "none";
+    console.log("Table toggled, display:", tableDiv.style.display);
+}
+
+function reloadData() { 
+    console.log("Manual refresh triggered");
+    loadLiveData(); 
+}
+
+function openPastDataModal() {
+    // Clear previous selections
+    document.getElementById("pastDate").value = "";
+    document.getElementById("pastLab").innerHTML = "<option value=''>-- Choose Lab --</option>";
+    document.getElementById("pastSystem").innerHTML = "<option value=''>-- Choose System --</option>";
+    document.getElementById("pastLab").disabled = true;
+    document.getElementById("pastSystem").disabled = true;
+    document.getElementById("pastDataMessage").style.display = "none";
+    
+    const modal = new bootstrap.Modal(document.getElementById("pastDataModal"));
+    modal.show();
 }
 
 function updateFlagIndicators() {
-    // Update flag indicators based on current selection
     const dateFlag = document.getElementById("dateFlag");
     const labFlag = document.getElementById("labFlag");
     const systemFlag = document.getElementById("systemFlag");
@@ -504,83 +633,6 @@ function updateFlagIndicators() {
     const userOption = document.querySelector(`#userSelect option[value="${selectedUser}"]`);
     const userHasFlags = userOption && userOption.dataset.flagged === "true";
     userFlag.style.display = userHasFlags ? "inline" : "none";
-}
-
-function getFilteredData() {
-    let dataToShow = allData;
-    if (selectedDate) dataToShow = dataToShow.filter(r => r.timestamp.startsWith(selectedDate));
-    if (selectedLab) dataToShow = dataToShow.filter(r => r.lab_name === selectedLab);
-    if (selectedSystem) dataToShow = dataToShow.filter(r => r.system_name === selectedSystem);
-    if (selectedUser) dataToShow = dataToShow.filter(r => r.user_name === selectedUser);
-    
-    console.log("Filtered data:", {
-        total: allData.length,
-        filtered: dataToShow.length,
-        filters: { selectedDate, selectedLab, selectedSystem, selectedUser }
-    });
-    
-    return dataToShow;
-}
-
-function filterAndRender() {
-    console.log("Applying filters and rendering...");
-    const dataToShow = getFilteredData();
-    console.log("Filtered data count:", dataToShow.length); // Debug
-    
-    if (dataToShow.length > 0) {
-        console.log("Showing chart and table with", dataToShow.length, "records");
-        document.getElementById("chartContainer").style.display = "block";
-        document.getElementById("dataTableContainer").style.display = "block";
-        renderChart(dataToShow);
-        renderTable(dataToShow);
-    } else {
-        console.log("No data to display - hiding chart and table");
-        document.getElementById("chartContainer").style.display = "none";
-        document.getElementById("dataTableContainer").style.display = "none";
-    }
-    
-    updateSelectionSummary();
-    updateFlagIndicators();
-}
-
-function clearFilters() {
-    console.log("Clearing all filters");
-    selectedDate = "";
-    selectedLab = "";
-    selectedSystem = "";
-    selectedUser = "";
-    
-    document.getElementById("datePicker").value = "";
-    document.getElementById("labSelect").value = "";
-    document.getElementById("systemSelect").value = "";
-    document.getElementById("userSelect").value = "";
-    
-    document.getElementById("labSelect").disabled = true;
-    document.getElementById("systemSelect").disabled = true;
-    document.getElementById("userSelect").disabled = true;
-    
-    // Show all data when filters are cleared
-    document.getElementById("chartContainer").style.display = "block";
-    document.getElementById("dataTableContainer").style.display = "block";
-    
-    updateFlagIndicators();
-    filterAndRender();
-}
-
-function toggleTable() {
-    const tableDiv = document.getElementById("dataTableContainer");
-    tableDiv.style.display = tableDiv.style.display === "none" ? "block" : "none";
-    console.log("Table toggled, display:", tableDiv.style.display);
-}
-
-function reloadData() { 
-    console.log("Manual refresh triggered");
-    loadLiveData(); 
-}
-
-function openPastDataModal() {
-    const modal = new bootstrap.Modal(document.getElementById("pastDataModal"));
-    modal.show();
 }
 
 function renderChart(data) {
@@ -660,7 +712,9 @@ async function toggleFlag(id, flagged) {
         // Reload data to reflect changes
         await loadLiveData();
         // Re-apply current filters
-        filterAndRender();
+        if (filtersApplied) {
+            applyFilters();
+        }
     } catch (err) {
         console.error("Error toggling flag:", err);
         alert("Error updating flag status");
@@ -673,6 +727,7 @@ async function toggleFlag(id, flagged) {
 async function onPastDateChange() {
     const date = document.getElementById("pastDate").value;
     if (!date) return;
+    
     showLoading();
     try {
         const res = await axios.get(`/labs?date=${date}`, {
@@ -681,20 +736,35 @@ async function onPastDateChange() {
         const labsData = res.data || {};
         const pastLab = document.getElementById("pastLab");
         pastLab.innerHTML = `<option value="">-- Choose Lab --</option>`;
+        
+        if (Object.keys(labsData).length === 0) {
+            pastLab.disabled = true;
+            document.getElementById("pastSystem").disabled = true;
+            document.getElementById("pastDataMessage").style.display = "block";
+            document.getElementById("pastDataMessage").innerHTML = 
+                `<strong>⚠️ No data found</strong> for date: ${date}. Please select a different date.`;
+            hideLoading();
+            return;
+        }
+        
         Object.keys(labsData).forEach(lab => {
             const opt = document.createElement("option");
             opt.value = lab;
-            opt.textContent = lab;
+            const hasFlagged = labsData[lab].some(sys => sys.flagged === 1);
+            opt.textContent = lab + (hasFlagged ? " 🚩" : "");
             pastLab.appendChild(opt);
         });
-        pastLab.disabled = Object.keys(labsData).length === 0;
-        if (Object.keys(labsData).length === 0) {
-            alert("No labs found for this date.");
-        }
+        
+        pastLab.disabled = false;
         document.getElementById("pastSystem").innerHTML = `<option value="">-- Choose System --</option>`;
         document.getElementById("pastSystem").disabled = true;
+        document.getElementById("pastDataMessage").style.display = "none";
+        
     } catch (err) {
         console.error("Error loading past labs:", err);
+        document.getElementById("pastDataMessage").style.display = "block";
+        document.getElementById("pastDataMessage").innerHTML = 
+            `<strong>❌ Error loading data</strong> for date: ${date}. Please try again.`;
     } finally {
         hideLoading();
     }
@@ -704,54 +774,117 @@ async function onPastLabChange() {
     const lab = document.getElementById("pastLab").value;
     const date = document.getElementById("pastDate").value;
     if (!lab || !date) return;
-    const res = await axios.get(`/labs?date=${date}`, {
-        auth: { username: "admin", password: "myStrongPassword123" }
-    });
-    const systems = res.data[lab] || [];
-    const pastSystem = document.getElementById("pastSystem");
-    pastSystem.innerHTML = `<option value="">-- Choose System --</option>`;
-    systems.forEach(sys => {
-        const opt = document.createElement("option");
-        opt.value = sys.system_name;
-        opt.textContent = sys.system_name;
-        pastSystem.appendChild(opt);
-    });
-    pastSystem.disabled = systems.length === 0;
-    if (systems.length === 0) alert("No systems available for this lab/date.");
+    
+    showLoading();
+    try {
+        const res = await axios.get(`/labs?date=${date}`, {
+            auth: { username: "admin", password: "myStrongPassword123" }
+        });
+        const labsData = res.data || {};
+        const systems = labsData[lab] || [];
+        
+        const pastSystem = document.getElementById("pastSystem");
+        pastSystem.innerHTML = `<option value="">-- Choose System --</option>`;
+        
+        if (systems.length === 0) {
+            pastSystem.disabled = true;
+            document.getElementById("pastDataMessage").style.display = "block";
+            document.getElementById("pastDataMessage").innerHTML = 
+                `<strong>⚠️ No systems found</strong> for lab: ${lab} on date: ${date}.`;
+            hideLoading();
+            return;
+        }
+        
+        systems.forEach(sys => {
+            const opt = document.createElement("option");
+            opt.value = sys.system_name;
+            opt.textContent = sys.system_name + (sys.flagged === 1 ? " 🚩" : "");
+            pastSystem.appendChild(opt);
+        });
+        
+        pastSystem.disabled = false;
+        document.getElementById("pastDataMessage").style.display = "none";
+        
+    } catch (err) {
+        console.error("Error loading systems:", err);
+    } finally {
+        hideLoading();
+    }
 }
 
 async function fetchPastData() {
     const date = document.getElementById("pastDate").value;
     const lab = document.getElementById("pastLab").value;
     const system = document.getElementById("pastSystem").value;
-    if (!date || !lab || !system) {
-        alert("Please select date, lab, and system.");
+    
+    if (!date) {
+        alert("Please select a date.");
         return;
     }
+    
     showLoading();
     try {
-        const res = await axios.get(`/data?date=${date}`, {
+        // Fetch data for the selected date
+        const res = await axios.get(`/data?date=${date}&limit=1000`, {
             auth: { username: "admin", password: "myStrongPassword123" }
         });
-        allData = res.data.filter(r => r.lab_name === lab && r.system_name === system);
-        if (allData.length === 0) {
-            alert("No data found for the selected date/lab/system.");
-            document.getElementById("chartContainer").style.display = "none";
-            document.getElementById("dataTableContainer").style.display = "none";
-        } else {
-            // Set the filters
-            selectedDate = date;
-            selectedLab = lab;
-            selectedSystem = system;
-            document.getElementById("datePicker").value = date;
-            document.getElementById("labSelect").value = lab;
-            document.getElementById("systemSelect").value = system;
-            updateFlagIndicators();
-            filterAndRender();
+        
+        let filteredData = res.data || [];
+        
+        // Apply lab filter if selected
+        if (lab) {
+            filteredData = filteredData.filter(r => r.lab_name === lab);
         }
+        
+        // Apply system filter if selected
+        if (system) {
+            filteredData = filteredData.filter(r => r.system_name === system);
+        }
+        
+        if (filteredData.length === 0) {
+            alert("No data found for the selected filters.");
+            hideLoading();
+            return;
+        }
+        
+        // Update global data and filters
+        allData = filteredData;
+        
+        // Set the main filters to match past data selection
+        selectedDate = date;
+        selectedLab = lab || "";
+        selectedSystem = system || "";
+        selectedUser = "";
+        filtersApplied = true;
+        
+        // Update UI elements
+        document.getElementById("datePicker").value = date;
+        
+        // Reload labs for the main filter
+        await loadLabs(date);
+        
+        // Set lab selection if specified
+        if (lab) {
+            document.getElementById("labSelect").value = lab;
+            selectedLab = lab;
+            onLabChange();
+            
+            // Set system selection if specified
+            if (system) {
+                document.getElementById("systemSelect").value = system;
+                selectedSystem = system;
+                onSystemChange();
+            }
+        }
+        
+        // Apply filters to render the data
+        applyFilters();
+        
         bootstrap.Modal.getInstance(document.getElementById("pastDataModal")).hide();
+        
     } catch (err) {
         console.error("Error fetching past data:", err);
+        alert("Error fetching data for selected date");
     } finally {
         hideLoading();
     }
