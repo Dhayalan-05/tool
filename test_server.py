@@ -487,7 +487,7 @@ def health_check():
         }), 500
 
 @app.route('/')
-@requires_auth  # ADDED: Protect the main dashboard
+@requires_auth  
 def dashboard():
     """Serve the dashboard"""
     return send_from_directory(os.path.dirname(__file__), 'activity_monitor.html')
