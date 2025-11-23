@@ -398,6 +398,18 @@ authAxios.interceptors.request.use(config => {
     return config;
 });
 
+// Remove browser authentication prompts
+axios.interceptors.response.use(
+    response => response,
+    error => {
+        if (error.response && error.response.status === 401) {
+            // Don't show browser auth prompt, handle it in our custom login
+            return Promise.reject(error);
+        }
+        return Promise.reject(error);
+    }
+);
+
 function initializeDashboard() {
     console.log("Dashboard loaded - starting data refresh");
     // Set today's date by default
@@ -852,11 +864,31 @@ async function toggleFlag(id, flagged) {
         if (err.response && err.response.status === 401) {
             handleAuthError();
         } else {
-            alert("Error updating flag status");
+            // Use custom modal instead of alert
+            showCustomAlert("Error updating flag status");
         }
     } finally {
         hideLoading();
     }
+}
+
+// Custom alert function to avoid browser alerts
+function showCustomAlert(message) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = 'alert alert-warning alert-dismissible fade show position-fixed';
+    alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    document.body.appendChild(alertDiv);
+    
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+        if (alertDiv.parentNode) {
+            alertDiv.remove();
+        }
+    }, 5000);
 }
 
 // Past data modal functions
@@ -956,7 +988,7 @@ async function fetchPastData() {
     const system = document.getElementById("pastSystem").value;
     
     if (!date) {
-        alert("Please select a date.");
+        showCustomAlert("Please select a date.");
         return;
     }
     
@@ -977,7 +1009,7 @@ async function fetchPastData() {
         }
         
         if (filteredData.length === 0) {
-            alert("No data found for the selected filters.");
+            showCustomAlert("No data found for the selected filters.");
             hideLoading();
             return;
         }
@@ -1022,7 +1054,7 @@ async function fetchPastData() {
         if (err.response && err.response.status === 401) {
             handleAuthError();
         } else {
-            alert("Error fetching data for selected date");
+            showCustomAlert("Error fetching data for selected date");
         }
     } finally {
         hideLoading();
