@@ -251,8 +251,13 @@ def fetch_records(date=None, limit=1000):
     try:
         query = {}
         if date:
-            # Fix: Use regex to match the date part of ISO timestamp
-            query["timestamp"] = {"$regex": f"^{date}"}
+            # Use proper date range query instead of regex for better performance
+            start_date = datetime.strptime(date, "%Y-%m-%d")
+            end_date = start_date + timedelta(days=1)
+            query["timestamp"] = {
+                "$gte": start_date.isoformat(),
+                "$lt": end_date.isoformat()
+            }
         
         cursor = records_col.find(query).sort("timestamp", -1).limit(limit)
         rows = list(cursor)
@@ -340,50 +345,55 @@ def get_labs():
         # Build query with date filter
         query = {}
         if date_filter:
-            query["timestamp"] = {"$regex": f"^{date_filter}"}
+            # Use proper date range query
+            start_date = datetime.strptime(date_filter, "%Y-%m-%d")
+            end_date = start_date + timedelta(days=1)
+            query["timestamp"] = {
+                "$gte": start_date.isoformat(),
+                "$lt": end_date.isoformat()
+            }
         
-        # Get records with the date filter
-        records = list(records_col.find(query).limit(5000))
-        logger.info(f"Found {len(records)} records for date: {date_filter}")
-        
-        if not records:
-            logger.info("No records found in database for the given filters")
-            return jsonify({})
-        
-        # Build comprehensive lab map
-        lab_map = {}
-        for record in records:
-            lab_name = record.get("lab_name", "Unknown Lab")
-            system_name = record.get("system_name", "Unknown System")
-            user_name = record.get("user_name", "Unknown User")
-            flagged = record.get("flagged", 0)
-            
-            if lab_name not in lab_map:
-                lab_map[lab_name] = {}
-            
-            if system_name not in lab_map[lab_name]:
-                lab_map[lab_name][system_name] = {
-                    "system_name": system_name,
-                    "flagged": flagged,
-                    "total_visits": 0,
-                    "users": set()
+        # Use aggregation for better performance
+        pipeline = [
+            {"$match": query},
+            {"$group": {
+                "_id": {
+                    "lab": "$lab_name",
+                    "system": "$system_name",
+                    "user": "$user_name"
+                },
+                "total_visits": {"$sum": 1},
+                "flagged": {"$max": "$flagged"}
+            }},
+            {"$group": {
+                "_id": {
+                    "lab": "$_id.lab",
+                    "system": "$_id.system"
+                },
+                "total_visits": {"$sum": "$total_visits"},
+                "flagged": {"$max": "$flagged"},
+                "users": {"$addToSet": "$_id.user"}
+            }},
+            {"$group": {
+                "_id": "$_id.lab",
+                "systems": {
+                    "$push": {
+                        "system_name": "$_id.system",
+                        "total_visits": "$total_visits",
+                        "flagged": "$flagged",
+                        "users": "$users"
+                    }
                 }
-            
-            lab_map[lab_name][system_name]["total_visits"] += 1
-            lab_map[lab_name][system_name]["flagged"] = max(
-                lab_map[lab_name][system_name]["flagged"], 
-                flagged
-            )
-            lab_map[lab_name][system_name]["users"].add(user_name)
+            }}
+        ]
         
-        # Convert to required format and convert sets to lists
+        lab_data = list(records_col.aggregate(pipeline))
+        
+        # Convert to the expected format
         result = {}
-        for lab_name, systems in lab_map.items():
-            system_list = []
-            for system_data in systems.values():
-                system_data["users"] = list(system_data["users"])
-                system_list.append(system_data)
-            result[lab_name] = system_list
+        for lab in lab_data:
+            lab_name = lab["_id"] or "Unknown Lab"
+            result[lab_name] = lab["systems"]
         
         logger.info(f"Returning {len(result)} labs with systems")
         return jsonify(result)
@@ -477,6 +487,7 @@ def health_check():
         }), 500
 
 @app.route('/')
+@requires_auth  # ADDED: Protect the main dashboard
 def dashboard():
     """Serve the dashboard"""
     return send_from_directory(os.path.dirname(__file__), 'activity_monitor.html')
@@ -491,8 +502,20 @@ def initialize_app():
     if not _model_cache and client is not None:
         train_model()
 
+# Print all routes for debugging
+def print_routes():
+    print("\n📋 ALL FLASK ROUTES:")
+    print("-" * 50)
+    for rule in app.url_map.iter_rules():
+        if rule.endpoint != 'static':
+            methods = ','.join(rule.methods)
+            protected = "PROTECTED" if "requires_auth" in str(app.view_functions[rule.endpoint]) else "UNPROTECTED"
+            print(f"{rule.endpoint:20} {methods:15} {rule.rule:30} [{protected}]")
+    print("-" * 50)
+
 # Initialize immediately
 initialize_app()
+print_routes()
 
 # ------------------------------
 # Run Flask
