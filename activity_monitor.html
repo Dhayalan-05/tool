@@ -86,6 +86,9 @@ body {
     margin-bottom: 20px;
     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
 }
+.search-box {
+    margin-bottom: 15px;
+}
 </style>
 </head>
 <body class="p-4">
@@ -131,6 +134,17 @@ body {
     <!-- Filters Section -->
     <div class="filter-section">
         <h5 class="mb-3">🔍 Filter Data</h5>
+        
+        <!-- Search Box for Dashboard -->
+        <div class="search-box">
+            <div class="row justify-content-center">
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">Search Records:</label>
+                    <input type="text" id="searchInput" class="form-control" placeholder="Search by URL, title, category, or user..." onkeyup="performSearch()">
+                </div>
+            </div>
+        </div>
+        
         <div class="row justify-content-center">
             <div class="col-md-3">
                 <label class="form-label fw-bold">Select Date: 
@@ -264,6 +278,7 @@ let selectedLab = "";
 let selectedSystem = "";
 let selectedUser = "";
 let filtersApplied = false;
+let searchTerm = "";
 
 function showLoading() { 
     console.log("Showing loading...");
@@ -282,16 +297,13 @@ document.addEventListener("DOMContentLoaded", () => {
     selectedDate = today;
     
     loadLiveData();
-    // Refresh only when user clicks refresh button, not automatically
 });
 
 async function loadLiveData() {
     console.log("Loading live data...");
     showLoading();
     try {
-        const res = await axios.get("/data", {
-            auth: { username: "admin", password: "myStrongPassword123" }
-        });
+        const res = await axios.get("/data", { withCredentials: true });
         allData = res.data || [];
         console.log("Loaded data:", allData.length, "records");
         
@@ -310,6 +322,9 @@ async function loadLiveData() {
         
     } catch (err) {
         console.error("Error fetching data:", err);
+        if (err.response && err.response.status === 401) {
+            alert("Authentication required. Please refresh the page and log in.");
+        }
     } finally {
         hideLoading();
     }
@@ -373,9 +388,7 @@ async function loadLabs(date) {
     console.log("Loading labs for date:", date);
     showLoading();
     try {
-        const res = await axios.get(`/labs?date=${date}`, {
-            auth: { username: "admin", password: "myStrongPassword123" }
-        });
+        const res = await axios.get(`/labs?date=${date}`, { withCredentials: true });
         labs = res.data || {};
         console.log("Labs loaded:", Object.keys(labs).length, "labs");
         
@@ -416,6 +429,9 @@ async function loadLabs(date) {
         
     } catch (err) {
         console.error("Error loading labs:", err);
+        if (err.response && err.response.status === 401) {
+            alert("Authentication required. Please refresh the page and log in.");
+        }
         hideLoading();
     }
 }
@@ -492,6 +508,19 @@ function onUserChange() {
     updateFlagIndicators();
 }
 
+// NEW: Search functionality for dashboard
+function performSearch() {
+    searchTerm = document.getElementById("searchInput").value.toLowerCase().trim();
+    console.log("Searching for:", searchTerm);
+    
+    if (searchTerm) {
+        applyFilters();
+    } else {
+        // If search is cleared, re-apply existing filters
+        applyFilters();
+    }
+}
+
 function applyFilters() {
     console.log("Applying filters...");
     filtersApplied = true;
@@ -541,10 +570,22 @@ function getFilteredData() {
         dataToShow = dataToShow.filter(r => r.user_name === selectedUser);
     }
     
+    // Apply search filter (only in dashboard, not in past data)
+    if (searchTerm) {
+        dataToShow = dataToShow.filter(r => 
+            (r.url && r.url.toLowerCase().includes(searchTerm)) ||
+            (r.title && r.title.toLowerCase().includes(searchTerm)) ||
+            (r.category && r.category.toLowerCase().includes(searchTerm)) ||
+            (r.user_name && r.user_name.toLowerCase().includes(searchTerm)) ||
+            (r.lab_name && r.lab_name.toLowerCase().includes(searchTerm)) ||
+            (r.system_name && r.system_name.toLowerCase().includes(searchTerm))
+        );
+    }
+    
     console.log("Filtered data:", {
         total: allData.length,
         filtered: dataToShow.length,
-        filters: { selectedDate, selectedLab, selectedSystem, selectedUser }
+        filters: { selectedDate, selectedLab, selectedSystem, selectedUser, searchTerm }
     });
     
     return dataToShow;
@@ -556,12 +597,14 @@ function clearFilters() {
     selectedLab = "";
     selectedSystem = "";
     selectedUser = "";
+    searchTerm = "";
     filtersApplied = false;
     
     document.getElementById("datePicker").value = "";
     document.getElementById("labSelect").value = "";
     document.getElementById("systemSelect").value = "";
     document.getElementById("userSelect").value = "";
+    document.getElementById("searchInput").value = "";
     
     document.getElementById("labSelect").disabled = true;
     document.getElementById("systemSelect").disabled = true;
@@ -706,9 +749,7 @@ async function toggleFlag(id, flagged) {
     showLoading();
     const endpoint = flagged ? "/unflag" : "/flag";
     try {
-        await axios.post(endpoint, { id }, {
-            auth: { username: "admin", password: "myStrongPassword123" }
-        });
+        await axios.post(endpoint, { id }, { withCredentials: true });
         // Reload data to reflect changes
         await loadLiveData();
         // Re-apply current filters
@@ -717,22 +758,24 @@ async function toggleFlag(id, flagged) {
         }
     } catch (err) {
         console.error("Error toggling flag:", err);
-        alert("Error updating flag status");
+        if (err.response && err.response.status === 401) {
+            alert("Authentication required. Please refresh the page and log in.");
+        } else {
+            alert("Error updating flag status");
+        }
     } finally {
         hideLoading();
     }
 }
 
-// Past data modal functions
+// Past data modal functions (NO SEARCH in past data)
 async function onPastDateChange() {
     const date = document.getElementById("pastDate").value;
     if (!date) return;
     
     showLoading();
     try {
-        const res = await axios.get(`/labs?date=${date}`, {
-            auth: { username: "admin", password: "myStrongPassword123" }
-        });
+        const res = await axios.get(`/labs?date=${date}`, { withCredentials: true });
         const labsData = res.data || {};
         const pastLab = document.getElementById("pastLab");
         pastLab.innerHTML = `<option value="">-- Choose Lab --</option>`;
@@ -762,6 +805,9 @@ async function onPastDateChange() {
         
     } catch (err) {
         console.error("Error loading past labs:", err);
+        if (err.response && err.response.status === 401) {
+            alert("Authentication required. Please refresh the page and log in.");
+        }
         document.getElementById("pastDataMessage").style.display = "block";
         document.getElementById("pastDataMessage").innerHTML = 
             `<strong>❌ Error loading data</strong> for date: ${date}. Please try again.`;
@@ -777,9 +823,7 @@ async function onPastLabChange() {
     
     showLoading();
     try {
-        const res = await axios.get(`/labs?date=${date}`, {
-            auth: { username: "admin", password: "myStrongPassword123" }
-        });
+        const res = await axios.get(`/labs?date=${date}`, { withCredentials: true });
         const labsData = res.data || {};
         const systems = labsData[lab] || [];
         
@@ -807,6 +851,9 @@ async function onPastLabChange() {
         
     } catch (err) {
         console.error("Error loading systems:", err);
+        if (err.response && err.response.status === 401) {
+            alert("Authentication required. Please refresh the page and log in.");
+        }
     } finally {
         hideLoading();
     }
@@ -824,10 +871,7 @@ async function fetchPastData() {
     
     showLoading();
     try {
-        // Fetch data for the selected date
-        const res = await axios.get(`/data?date=${date}&limit=1000`, {
-            auth: { username: "admin", password: "myStrongPassword123" }
-        });
+        const res = await axios.get(`/data?date=${date}&limit=1000`, { withCredentials: true });
         
         let filteredData = res.data || [];
         
@@ -855,10 +899,12 @@ async function fetchPastData() {
         selectedLab = lab || "";
         selectedSystem = system || "";
         selectedUser = "";
+        searchTerm = ""; // Clear search when loading past data
         filtersApplied = true;
         
         // Update UI elements
         document.getElementById("datePicker").value = date;
+        document.getElementById("searchInput").value = ""; // Clear search box
         
         // Reload labs for the main filter
         await loadLabs(date);
@@ -884,7 +930,11 @@ async function fetchPastData() {
         
     } catch (err) {
         console.error("Error fetching past data:", err);
-        alert("Error fetching data for selected date");
+        if (err.response && err.response.status === 401) {
+            alert("Authentication required. Please refresh the page and log in.");
+        } else {
+            alert("Error fetching data for selected date");
+        }
     } finally {
         hideLoading();
     }
