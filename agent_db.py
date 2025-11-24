@@ -151,8 +151,10 @@ def detect_browsers_all_users():
                         if profile.is_dir() and profile.name not in ["System Profile", "Guest Profile"]:
                             hist = profile / "History"
                             if hist.exists():
+                                # Create descriptive key: Browser_User_Profile
                                 key = f"{browser_name}_{user_name}_{profile.name}"
                                 browsers_found[key] = str(hist)
+                                print(f"[Agent] Found {browser_name} profile: {user_name} -> {profile.name}")
                 except PermissionError:
                     print(f"[Agent] Permission denied accessing {browser_name} for user {user_name}")
 
@@ -164,16 +166,18 @@ def detect_browsers_all_users():
                     if profile.is_dir():
                         places = profile / "places.sqlite"
                         if places.exists():
+                            # Create descriptive key: Browser_User_Profile
                             key = f"Firefox_{user_name}_{profile.name}"
                             browsers_found[key] = str(places)
+                            print(f"[Agent] Found Firefox profile: {user_name} -> {profile.name}")
             except PermissionError:
                 print(f"[Agent] Permission denied accessing Firefox for user {user_name}")
     
-    print(f"[Agent] Found {len(browsers_found)} browser profiles")
+    print(f"[Agent] Found {len(browsers_found)} browser profiles across all users")
     return browsers_found
 
 # ---------- HISTORY EXTRACTION ----------
-def extract_history(db_path, browser_name):
+def extract_history(db_path, browser_key):
     temp = f"temp_{hash(db_path) & 0xFFFFFFFF}.db"
     out = []
     
@@ -238,22 +242,32 @@ def extract_history(db_path, browser_name):
                 if any(keyword in url.lower() for keyword in suspicious_keywords):
                     flagged = 1
             
+            # ✅ FIXED: Parse browser_key to extract components
+            # Format: "BrowserName_UserName_ProfileName"
+            parts = browser_key.split('_')
+            browser_type = parts[0] if len(parts) > 0 else "Unknown"
+            user_name = parts[1] if len(parts) > 1 else "Unknown"
+            profile_name = parts[2] if len(parts) > 2 else "Default"
+            
             # ✅ FIXED: Map to correct field names expected by the server/dashboard
             out.append({
                 "lab_name": LAB_NAME,
                 "system_name": SYSTEM_NAME,
-                "browser": browser_name.split('_')[0],  # Extract browser type
+                "browser": browser_type,
                 "url": url[:500],
                 "title": title[:500],
                 "timestamp": timestamp,
                 "category": category,
                 "flagged": flagged,
-                # Add user_name for the dashboard
-                "user_name": browser_name.split('_')[1] if '_' in browser_name else "Unknown"
+                # Add detailed user and profile information
+                "user_name": user_name,
+                "profile_name": profile_name,
+                # Add the original browser key for debugging
+                "browser_key": browser_key
             })
             
     except Exception as e:
-        print(f"[Agent] {browser_name} extraction error: {e}")
+        print(f"[Agent] {browser_key} extraction error: {e}")
     finally:
         # Cleanup temp file
         try:
@@ -301,7 +315,7 @@ def test_visibility():
                 print(f"[Agent] 📅 Latest record: {latest_time}")
                 # Print sample record to verify structure
                 sample = data[0]
-                print(f"[Agent] 🔍 Sample record: Lab={sample.get('lab_name')}, System={sample.get('system_name')}, User={sample.get('user_name')}")
+                print(f"[Agent] 🔍 Sample record: Lab={sample.get('lab_name')}, System={sample.get('system_name')}, User={sample.get('user_name')}, Browser={sample.get('browser')}, Profile={sample.get('profile_name')}")
             else:
                 print("[Agent] ❌ No records visible in dashboard")
         else:
@@ -408,10 +422,15 @@ def main():
             browsers = detect_browsers_all_users()
             aggregated = []
             
-            for bname, path in browsers.items():
-                records = extract_history(path, bname)
+            for browser_key, path in browsers.items():
+                records = extract_history(path, browser_key)
+                if records:
+                    print(f"[Agent] Extracted {len(records)} TODAY'S records from {browser_key}")
+                    # Show sample URLs for debugging
+                    if records:
+                        sample_url = records[0].get('url', 'N/A')[:50] + "..." if len(records[0].get('url', '')) > 50 else records[0].get('url', 'N/A')
+                        print(f"[Agent] Sample URL from {browser_key}: {sample_url}")
                 aggregated.extend(records)
-                print(f"[Agent] Extracted {len(records)} TODAY'S records from {bname}")
             
             print(f"[Agent] Total TODAY'S records collected: {len(aggregated)}")
             
